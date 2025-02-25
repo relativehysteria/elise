@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "cpu",
  "serial",
+ "spinlock",
 ]
 
 [[package]]
@@ -20,3 +21,7 @@ version = "0.1.0"
 dependencies = [
  "cpu",
 ]
+
+[[package]]
+name = "spinlock"
+version = "0.1.0"

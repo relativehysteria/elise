@@ -17,7 +17,8 @@ pub const PORT_ADDRESSES: [*const u8; N_PORTS] = [
 
 /// The serial driver implementation for COM ports defined by `PORT_ADDRESSES`
 pub struct SerialDriver {
-    ports: [Option<*const u8>; N_PORTS]
+    /// Index map of which ports in `PORT_ADDRESSES` are valid.
+    ports: [bool; N_PORTS]
 }
 
 impl SerialDriver {
@@ -26,7 +27,7 @@ impl SerialDriver {
     pub unsafe fn init() -> Self {
         // Create a new serial port driver
         let mut driver = Self {
-            ports: [None; N_PORTS],
+            ports: [false; N_PORTS],
         };
 
         // Go through each defined port
@@ -63,7 +64,7 @@ impl SerialDriver {
                     cpu::out8(port.offset(4), 0x0F);
 
                     // Register the port
-                    driver.ports[idx] = Some(port);
+                    driver.ports[idx] = true;
                 }
             }
         }
@@ -76,15 +77,18 @@ impl SerialDriver {
     /// Read a byte from whatever port has a byte available
     pub fn read_byte(&mut self) -> Option<u8> {
         // Go through each port
-        for port in self.ports {
-            if let Some(port) = port {
-                unsafe {
-                    // Check if there is a byte available
-                    if (cpu::in8(port.offset(5)) & 1) != 0 {
-                        // Read the byte that was present on this port and
-                        // return it
-                        return Some(cpu::in8(port.offset(0)));
-                    }
+        for (idx, valid) in self.ports.iter().enumerate() {
+            // If the port is not valid, skip it
+            if !valid { continue; }
+
+            let port = PORT_ADDRESSES[idx];
+
+            unsafe {
+                // Check if there is a byte available
+                if (cpu::in8(port.offset(5)) & 1) != 0 {
+                    // Read the byte that was present on this port and
+                    // return it
+                    return Some(cpu::in8(port.offset(0)));
                 }
             }
         }
@@ -99,17 +103,20 @@ impl SerialDriver {
         if byte == b'\n' { self.write_byte(b'\r'); }
 
         // Go through each port
-        for port in self.ports {
-            if let Some(port) = port {
-                // Wait for the transmit buffer to be ready
-                unsafe {
-                    while (cpu::in8(port.offset(5)) & 0x20) == 0 {
-                        core::hint::spin_loop();
-                    }
+        for (idx, valid) in self.ports.iter().enumerate() {
+            // If the port is not valid, skip it
+            if !valid { continue; }
 
-                    // Write the byte
-                    cpu::out8(port.offset(0), byte);
+            let port = PORT_ADDRESSES[idx];
+
+            // Wait for the transmit buffer to be ready
+            unsafe {
+                while (cpu::in8(port.offset(5)) & 0x20) == 0 {
+                    core::hint::spin_loop();
                 }
+
+                // Write the byte
+                cpu::out8(port.offset(0), byte);
             }
         }
     }
