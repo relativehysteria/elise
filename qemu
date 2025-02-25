@@ -1,0 +1,34 @@
+#!/bin/sh
+
+[ "$1" = "" ] && target="debug" || target="release"
+
+# Build the images
+pushd bootloader
+if [ "$target" = "debug" ]; then
+    cargo build
+else
+    cargo build --release
+fi
+built=$?
+popd
+
+# If the build failed, exit
+if [ ! $built -eq 0 ]; then
+    echo "build failed"
+    exit
+fi
+
+# Start qemu with the bootloader image
+tftp="bootloader/target/x86_64-unknown-uefi/$target"
+ovmf="/usr/share/edk2-ovmf/OVMF_CODE.fd"
+smp="2,cores=2,threads=1,sockets=1"
+mem_mb="4096"
+
+sudo qemu-system-x86_64 \
+    -enable-kvm         \
+    -m "$mem_mb"        \
+    -smp "$smp"         \
+    -nographic          \
+    -bios "$ovmf"       \
+    -device driver=e1000,netdev=net0 \
+    -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi

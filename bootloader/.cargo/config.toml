@@ -1,0 +1,11 @@
+[build]
+target = "x86_64-unknown-uefi"
+
+[unstable]
+build-std = ["core", "alloc"]
+
+[target.x86_64-unknown-uefi]
+rustflags = [
+    "-C", "code-model=small",
+    "-C", "link-args=/debug:dwarf",
+]
