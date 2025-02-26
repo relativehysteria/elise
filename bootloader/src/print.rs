@@ -1,19 +1,13 @@
 use core::fmt::Write;
-use spinlock::SpinLock;
 use serial::SerialDriver;
-
-/// The global serial driver for the bootloader.
-///
-/// This driver is global because the print macro doesn't have access to
-/// arguments.
-pub static SERIAL_DRIVER: SpinLock<Option<SerialDriver>> = SpinLock::new(None);
+use crate::SHARED;
 
 /// Dummy struct that implements `Write` such that `print!()` can be used on it
 pub struct Serial;
 
 impl Write for Serial {
     fn write_str(&mut self, string: &str) -> core::fmt::Result {
-        let mut serial = SERIAL_DRIVER.lock();
+        let mut serial = SHARED.serial.lock();
         if let Some(serial) = &mut *serial {
             serial.write(string.as_bytes());
         }
@@ -28,7 +22,7 @@ pub struct SerialShatter;
 impl Write for SerialShatter {
     fn write_str(&mut self, string: &str) -> core::fmt::Result {
         unsafe {
-            let serial = SERIAL_DRIVER.shatter();
+            let serial = SHARED.serial.shatter();
             if let Some(serial) = &mut *serial {
                 serial.write(string.as_bytes());
             }

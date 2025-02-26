@@ -15,6 +15,7 @@ pub const PORT_ADDRESSES: [*const u8; N_PORTS] = [
     0x3E8 as *const u8,
 ];
 
+#[derive(Clone, Debug)]
 /// The serial driver implementation for COM ports defined by `PORT_ADDRESSES`
 pub struct SerialDriver {
     /// Index map of which ports in `PORT_ADDRESSES` are valid.

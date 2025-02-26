@@ -1,0 +1,8 @@
+[package]
+name = "shared_data"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serial = { path = "../serial" }
+spinlock = { path = "../spinlock" }

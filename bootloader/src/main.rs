@@ -4,19 +4,17 @@
 use bootloader::{efi, print};
 use serial::SerialDriver;
 use spinlock::SpinLock;
+use shared_data::Shared;
 
 #[unsafe(no_mangle)]
 fn efi_main(image_handle: efi::ImageHandle,
             system_table: *mut efi::SystemTable) -> efi::Status {
-
     // Initialize the serial driver
     {
         let driver = unsafe { SerialDriver::init() };
-        let mut global_driver = print::SERIAL_DRIVER.lock();
-        *global_driver = Some(driver);
+        let mut shared = bootloader::SHARED.serial.lock();
+        *shared = Some(driver);
     }
 
-    print!("Hello world!\n");
-
-    panic!();
+    panic!("Reached the end of bootloader execution");
 }

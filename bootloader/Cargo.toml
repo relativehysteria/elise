@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+shared_data = { path = "../shared/shared_data" }
 cpu = { path = "../shared/cpu" }
 serial = { path = "../shared/serial" }
 spinlock = { path = "../shared/spinlock" }
