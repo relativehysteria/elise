@@ -46,3 +46,32 @@ impl Write for SerialShatter {
             &mut $crate::print::SerialShatter, format_args!($($arg)*));
     }
 }
+
+/// Serial `println!()` support for the bootloader
+#[macro_export] macro_rules! println {
+    () => {
+        let _ = <$crate::print::Serial as core::fmt::Write>::write_str(
+            &mut $crate::print::Serial, "\n"
+        );
+    };
+    ($($arg:tt)*) => {
+        let _ = <$crate::print::Serial as core::fmt::Write>::write_fmt(
+            &mut $crate::print::Serial, format_args!("{}\n", format_args!($($arg)*))
+        );
+    };
+}
+
+/// Serial `println_shatter!()` support for the bootloader
+#[macro_export] macro_rules! println_shatter {
+    () => {
+        let _ = <$crate::print::SerialShatter as core::fmt::Write>::write_str(
+            &mut $crate::print::SerialShatter, "\n"
+        );
+    };
+    ($($arg:tt)*) => {
+        let _ = <$crate::print::SerialShatter as core::fmt::Write>::write_fmt(
+            &mut $crate::print::SerialShatter,
+            format_args!("{}\n", format_args!($($arg)*))
+        );
+    };
+}

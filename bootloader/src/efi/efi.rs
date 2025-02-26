@@ -50,6 +50,7 @@ pub struct TableHeader {
 }
 
 #[allow(dead_code)]
+#[repr(C)]
 /// Contains pointers to the runtime and boot services tables
 pub struct SystemTable {
     /// The table header for this table
@@ -100,7 +101,7 @@ pub struct ConfigTable {
 /// Containes pointers to all of the boot services
 pub struct BootServices {
     /// The table header for this struct
-    pub hdr: TableHeader,
+    pub header: TableHeader,
 
     // Following are pointers to unused functions
 
@@ -112,7 +113,7 @@ pub struct BootServices {
     /// Returns the current boot services memory map and memory map key
     pub get_memory_map:
         unsafe fn(memory_map_size:    &mut usize,
-                  memory_map:         *mut u8,
+                  memory_map:         *mut MemoryDescriptor,
                   map_key:            &mut usize,
                   descriptor_size:    &mut usize,
                   descriptor_version: &mut u32) -> Status,

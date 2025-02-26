@@ -7,6 +7,7 @@ name = "bootloader"
 version = "0.1.0"
 dependencies = [
  "cpu",
+ "rangeset",
  "serial",
  "shared_data",
  "spinlock",
@@ -14,6 +15,10 @@ dependencies = [
 
 [[package]]
 name = "cpu"
+version = "0.1.0"
+
+[[package]]
+name = "rangeset"
 version = "0.1.0"
 
 [[package]]

@@ -41,24 +41,24 @@ pub enum Warning {
     UnknownGlyph = 1,
 
     /// The handle was closed, but the file was not deleted
-    DeleteFailure = 2,
+    DeleteFailure,
 
     /// The handle was closed, but the data to the file was not flushed properly
-    WriteFailure = 3,
+    WriteFailure,
 
     /// The resulting buffer was too small, and the data was truncated to the
     /// buffer size
-    BufferTooSmall = 4,
+    BufferTooSmall,
 
     /// The data has not been updated within the timeframe set by local policy
     /// for this type of data
-    StaleData = 5,
+    StaleData,
 
     /// The resulting buffer contains UEFI-compliant file system
-    FileSystem = 6,
+    FileSystem,
 
     /// The operation will be processed across a system reset
-    ResetRequired = 7,
+    ResetRequired,
 
     /// Warning not defined by the UEFI spec, likely OEM defined
     Undefined,
@@ -87,105 +87,105 @@ pub enum Error {
     LoadError = 1,
 
     /// A parameter was incorrect
-    InvalidParameter = 2,
+    InvalidParameter,
 
     /// The operation is not supported
-    Unsupported = 3,
+    Unsupported,
 
     /// The buffer was not the proper size for the request
-    BadBufferSize = 4,
+    BadBufferSize,
 
     /// The buffer is not large enough to hold the requested data. The required
     /// buffer size is returned in the appropriate parameter when this error
     /// occurs
-    BufferTooSmall = 5,
+    BufferTooSmall,
 
     /// There is no data pending upon return
-    NotReady = 6,
+    NotReady,
 
     /// The physical device reported an error while attempting the operation
-    DeviceError = 7,
+    DeviceError,
 
     /// The device cannot be written to
-    WriteProtected = 8,
+    WriteProtected,
 
     /// A resource has run out
-    OutOfResources = 9,
+    OutOfResources,
 
     /// An inconsistency was detected on the file system causing the operation
     /// to fail
-    VolumeCorrupted = 10,
+    VolumeCorrupted,
 
     /// There is no more space on the file system
-    VolumeFull = 11,
+    VolumeFull,
 
     /// The device does not contain any medium to perform the operation
-    NoMedia = 12,
+    NoMedia,
 
     /// The medium in the device has changed since the last access
-    MediaChanged = 13,
+    MediaChanged,
 
     /// The item was not found
-    NotFound = 14,
+    NotFound,
 
     /// Access was denied
-    AccessDenied = 15,
+    AccessDenied,
 
     /// The server was not found or did not respond to the request
-    NoResponse = 16,
+    NoResponse,
 
     /// A mapping to a device does not exist
-    NoMapping = 17,
+    NoMapping,
 
     /// The timeout time expired
-    Timeout = 18,
+    Timeout,
 
     /// The protocol has not been started
-    NotStarted = 19,
+    NotStarted,
 
     /// The protocol has already been started
-    AlreadyStarted = 20,
+    AlreadyStarted,
 
     /// The operation was aborted
-    Aborted = 21,
+    Aborted,
 
     /// An ICMP error occurred during the network operation
-    IcmpError = 22,
+    IcmpError,
 
     /// A TFTP error occurred during the network operation
-    TftpError = 23,
+    TftpError,
 
     /// A protocol error occurred during the network operation
-    ProtocolError = 24,
+    ProtocolError,
 
     /// The function encountered an internal version that was incompatible with
     /// a version requested by the caller
-    IncompatibleVersion = 25,
+    IncompatibleVersion,
 
     /// The function was not performed due to a security violation
-    SecurityViolation = 26,
+    SecurityViolation,
 
     /// A CRC error was detected
-    CrcError = 27,
+    CrcError,
 
     /// Beginning or end of media was reached
-    EndOfMedia = 28,
+    EndOfMedia,
 
     /// The end of the file was reached
     EndOfFile = 31,
 
     /// The language specified was invalid
-    InvalidLanguage = 32,
+    InvalidLanguage,
 
     /// The security status of the data is unknown or compromised and the data
     /// must be updated or replaced to restore a valid security status
-    CompromisedData = 33,
+    CompromisedData,
 
     /// There is an address conflict address allocation
-    IpAddressConflict = 34,
+    IpAddressConflict,
 
     /// A HTTP error occurred during the network operation
-    HttpError = 35,
+    HttpError,
 
     /// Error not defined by the UEFI spec, likely OEM defined
     Undefined,
