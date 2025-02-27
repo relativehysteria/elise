@@ -144,6 +144,7 @@ pub struct BootServices {
     pub free_pool: unsafe fn(buffer: *mut u8) -> Status,
 
     // Following are pointers to unused functions
+
     create_event:                 *const usize,
     set_timer:                    *const usize,
     wait_for_event:               *const usize,
