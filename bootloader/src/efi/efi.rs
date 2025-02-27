@@ -1,12 +1,27 @@
 //! Generic EFI definitions
 
-use crate::efi::*;
+use core::sync::atomic::{AtomicPtr, Ordering};
+use crate::efi::Status;
+use crate::efi::memory::{MemoryDescriptor, MemoryType};
 
 /// Handle to anything within the EFI spec
 pub type Handle = *const usize;
 
 /// Handle to an EFI image
 pub type ImageHandle = Handle;
+
+/// The static pointer to the `SystemTable` structure that is passed to our
+/// bootloader by UEFI on initialization
+pub static SYSTEM_TABLE: AtomicPtr<SystemTable> =
+    AtomicPtr::new(core::ptr::null_mut());
+
+/// Returns the pointer to the ['SystemTable'] structure passed by UEFI to the
+/// bootloader
+pub fn system_table() -> &'static SystemTable {
+    let ptr = SYSTEM_TABLE.load(Ordering::Relaxed);
+    assert!(!ptr.is_null(), "System table not initialized");
+    unsafe { &*ptr }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(C, packed)]
@@ -75,7 +90,7 @@ pub struct SystemTable {
     runtime_svc:           *const usize,
 
     /// Pointer to the EFI boot services table
-    pub boot_svc: *const BootServices,
+    pub boot_svc: &'static BootServices,
 
     /// The number of system configuration tables in the buffer `cfg_tables`
     pub n_cfg_entries: usize,
@@ -119,10 +134,16 @@ pub struct BootServices {
                   descriptor_version: &mut u32) -> Status,
 
 
-    // Following are pointers to unused functions
+    /// Allocate pool memory
+    pub allocate_pool:
+        unsafe fn(pool_type: MemoryType,
+                  size:      usize,
+                  buffer:    *mut *mut u8) -> Status,
 
-    allocate_pool:                *const usize,
-    free_pool:                    *const usize,
+    /// Return pool memory to the system
+    pub free_pool: unsafe fn(buffer: *mut u8) -> Status,
+
+    // Following are pointers to unused functions
     create_event:                 *const usize,
     set_timer:                    *const usize,
     wait_for_event:               *const usize,

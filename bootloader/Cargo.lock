@@ -32,6 +32,7 @@ dependencies = [
 name = "shared_data"
 version = "0.1.0"
 dependencies = [
+ "rangeset",
  "serial",
  "spinlock",
 ]

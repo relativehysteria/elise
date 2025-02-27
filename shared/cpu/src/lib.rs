@@ -6,7 +6,7 @@ use core::arch::asm;
 
 #[inline]
 /// Clears interrupts and halts the core
-pub fn halt() -> ! {
+pub unsafe fn halt() -> ! {
     unsafe { asm!("cli", "hlt"); }
     loop { core::hint::spin_loop(); }
 }

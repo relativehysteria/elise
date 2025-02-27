@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 serial = { path = "../serial" }
 spinlock = { path = "../spinlock" }
+rangeset = { path = "../rangeset" }

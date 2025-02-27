@@ -1,4 +1,4 @@
-use crate::efi::{SystemTable, Status};
+use crate::efi::{Status, system_table};
 use rangeset::{RangeSet, Range};
 
 #[derive(Debug)]
@@ -147,19 +147,13 @@ impl From<u32> for MemoryType {
     }
 }
 
-/// This is the maximum amount of memory regions we expect to handle in the
-/// bootloader.
-const EXPECTED_MEMORY_DESCRIPTORS: usize = 256;
-
 /// This is the maximum amount of memory descriptors we expect to get from UEFI.
 /// The larger your system memory, the more descriptors should be expected.
 const N_MEM_DESC: usize = 2048;
 
-pub fn get_memory_map(sys_table: &SystemTable)
-        -> Result<RangeSet<EXPECTED_MEMORY_DESCRIPTORS>, Error> {
+pub fn get_memory_map() -> Result<RangeSet, Error> {
     // Find the pointer to the boot services table
-    let boot_svc = unsafe { &*sys_table.boot_svc };
-    let get_memory_map = boot_svc.get_memory_map;
+    let get_memory_map = system_table().boot_svc.get_memory_map;
 
     // Allocate a buffer for the memory map
     let mut memory_map = [MemoryDescriptor::empty(); N_MEM_DESC];
@@ -206,11 +200,11 @@ pub fn get_memory_map(sys_table: &SystemTable)
     }
 
     // Reserve the first page to avoid writing into legacy structures
-    free_memory.remove(Range::new(0x0000, 0xFFFF).unwrap());
+    free_memory.remove(Range::new(0x0000, 0xFFFF).unwrap()).unwrap();
 
     // Also reserve the legacy video/BIOS hole in case UEFI returns it as
     // conventional memory when it technically shouldn't be
-    free_memory.remove(Range::new(0xA0000, 0xFFFFF).unwrap());
+    free_memory.remove(Range::new(0xA0000, 0xFFFFF).unwrap()).unwrap();
 
     // Return the memory
     Ok(free_memory)

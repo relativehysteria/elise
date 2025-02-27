@@ -1,6 +1,6 @@
 use super::*;
 
-const DEFAULT_RS: RangeSet<256> = RangeSet::new();
+const DEFAULT_RS: RangeSet = RangeSet::new();
 
 #[test]
 fn range_new_valid() {
@@ -189,23 +189,6 @@ fn rangeset_split_entry() {
 }
 
 #[test]
-fn rangeset_split_entry_at_max_capacity() {
-    let mut rangeset: RangeSet<2> = RangeSet::new();
-    rangeset.insert(Range::new(10, 30).unwrap()).unwrap();
-    rangeset.insert(Range::new(40, 60).unwrap()).unwrap();
-
-    let res = rangeset.split_entry(0, Range::new(15, 20).unwrap());
-    assert_eq!(res.unwrap_err(), Error::RangeSetOverflow);
-
-    // Make sure the rangeset is unchanged
-    let entries = rangeset.entries();
-    assert_eq!(rangeset.in_use, entries.len());
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0], Range { start: 10, end: 30 });
-    assert_eq!(entries[1], Range { start: 40, end: 60 });
-}
-
-#[test]
 fn rangeset_split_entry_complex() {
     let mut rangeset = DEFAULT_RS.clone();
     rangeset.insert(Range::new(100, 300).unwrap()).unwrap();
@@ -221,15 +204,6 @@ fn rangeset_split_entry_complex() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0], Range { start: 100, end: 149 });
     assert_eq!(entries[1], Range { start: 251, end: 300 });
-}
-
-#[test]
-fn rangeset_zero_sized() {
-    let mut rangeset: RangeSet<0> = RangeSet::new();
-    assert_eq!(rangeset.remove(Range::new(0, 10).unwrap()), Ok(false));
-    assert_eq!(rangeset.insert(Range::new(0, 10).unwrap()).unwrap_err(),
-               Error::RangeSetOverflow);
-    assert_eq!(rangeset.in_use, 0);
 }
 
 #[test]

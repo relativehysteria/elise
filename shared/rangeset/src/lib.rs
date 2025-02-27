@@ -24,6 +24,9 @@ pub enum Error {
 
     /// An attempt was made to allocate 0 bytes of memory.
     ZeroSizedAllocation,
+
+    /// An attempt was made to allocate memory not aligned to a power of 2
+    WrongAlignment(usize),
 }
 
 /// An inclusive range. `RangeInclusive` doesn't implement `Copy`, so it's not
@@ -76,19 +79,19 @@ impl Range {
 /// A set of non-overlapping inclusive `Range`s.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub struct RangeSet<const N: usize> {
+pub struct RangeSet {
     /// Array of ranges in the set
-    ranges: [Range; N],
+    ranges: [Range; 256],
 
     /// Number of range entries in use.
     in_use: usize,
 }
 
-impl<const N: usize> RangeSet<N> {
+impl RangeSet {
     /// Returns a new empty `RangeSet`
     pub const fn new() -> Self {
         RangeSet {
-            ranges:  [Range { start: 0, end: 0 }; N],
+            ranges:  [Range { start: 0, end: 0 }; 256],
             in_use: 0,
         }
     }
@@ -263,5 +266,64 @@ impl<const N: usize> RangeSet<N> {
         self.in_use += 1;
 
         Ok(true)
+    }
+
+    /// Allocate `size` bytes of memory with `align` requirements.
+    ///
+    /// Returns the pointer to the allocated memory.
+    /// If the the arguments to the function caused an unsatisfiable allocation,
+    /// an error will be returned. If the allocation can't be satisfied for
+    /// other reasons (i.e. there's not enough free memory), `Ok(None)` will be
+    /// returned.
+    pub fn allocate(&mut self, size: usize, align: usize)
+            -> Result<Option<usize>, Error> {
+        // Don't allow 0-sized allocations
+        if size == 0 { return Err(Error::ZeroSizedAllocation); }
+
+        // Check that we have an alignment with a power of 2
+        if align.count_ones() != 1 {
+            return Err(Error::WrongAlignment(align));
+        }
+
+        // Generate a mask for the alignment
+        let align_mask = align - 1;
+
+        // Go through each range and see if an allocation can fit into it
+        let mut allocation = None;
+        for entry in self.entries() {
+            // Calculate the padding
+            let padding = (align - (entry.start & align_mask)) & align_mask;
+
+            // Compute the inclusive start and end of the allocation
+            let start = entry.start;
+            let end   = start.checked_add(size - 1)
+                .and_then(|e| e.checked_add(padding));
+
+            // If the allocation couldn't be satisfied, stop trying
+            let end = match end {
+                None      => return Ok(None),
+                Some(end) => end,
+            };
+
+            // Make sure this entry is large enough for the allocation
+            if end > entry.end { continue; }
+
+            // Compute the "best" allocation size to date
+            let prev_size = allocation.map(|(start, end, _)| end - start);
+
+            if allocation.is_none() || prev_size.unwrap() > end - start {
+                // Update the allocation to the new best size
+                allocation = Some((start, end, start + padding));
+            }
+        }
+
+        Ok(allocation.map(|(start, end, ptr)| {
+            // Remove this range from the available set; it should be properly
+            // validated at this point
+            self.remove(Range { start, end }).unwrap();
+
+            // Return out the pointer!
+            ptr
+        }))
     }
 }

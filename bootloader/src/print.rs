@@ -1,5 +1,4 @@
 use core::fmt::Write;
-use serial::SerialDriver;
 use crate::SHARED;
 
 /// Dummy struct that implements `Write` such that `print!()` can be used on it
