@@ -23,15 +23,15 @@ static SYSTEM_TABLE: AtomicPtr<SystemTable> =
 
 /// The static pointer to the bootloader `ImageHandle` that is passed to our
 /// bootloader by UEFI on initialization
-static BOOTLOADER_IMAGE: AtomicPtr<ImageHandle> =
+static BOOTLOADER_IMAGE: AtomicPtr<usize> =
     AtomicPtr::new(core::ptr::null_mut());
 
 /// Initialize the structures required for a function EFI interface for the
 /// bootloader
-pub fn init_efi(mut bootloader_image: ImageHandle,
+pub fn init_efi(bootloader_image: *mut usize,
                 system_table: *mut SystemTable) {
     SYSTEM_TABLE.store(system_table, Ordering::SeqCst);
-    BOOTLOADER_IMAGE.store(&mut bootloader_image, Ordering::SeqCst);
+    BOOTLOADER_IMAGE.store(bootloader_image, Ordering::SeqCst);
 }
 
 /// Returns a reference to the ['SystemTable'] structure passed by UEFI to the
@@ -44,10 +44,10 @@ pub fn system_table() -> &'static SystemTable {
 
 /// Returns a reference to the bootloader's `ImageHandle` passed by UEFI to the
 /// bootloader
-pub fn bootloader_image() -> &'static ImageHandle {
+pub fn bootloader_image() -> ImageHandle {
     let ptr = BOOTLOADER_IMAGE.load(Ordering::Relaxed);
     assert!(!ptr.is_null(), "Bootloader image not initialized");
-    unsafe { &*ptr }
+    unsafe { ptr }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
