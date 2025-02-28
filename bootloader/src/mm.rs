@@ -88,7 +88,7 @@ unsafe fn boot_alloc(layout: Layout) -> *mut u8 {
         if status != Status::Success {
             core::ptr::null_mut() as *mut u8
         } else {
-            *buffer as *mut u8
+            buffer
         }
     }
 }
