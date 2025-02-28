@@ -79,9 +79,9 @@ pub unsafe fn switch_to_post_boot(memory_map: rangeset::RangeSet) {
 unsafe fn boot_alloc(layout: Layout) -> *mut u8 {
     unsafe {
         // Attempt to allocate the requesed memory
-        let buffer: *mut *mut u8 = core::ptr::null_mut();
+        let mut buffer: *mut u8 = core::ptr::null_mut();
         let status = (system_table().boot_svc.allocate_pool)(
-            MemoryType::LoaderData, layout.size(), buffer);
+            MemoryType::LoaderData, layout.size(), &mut buffer);
 
         // If the allocation fails for whatever reason, return a null pointer as
         // required by rust, otherwise return a pointer to the allocated memory
