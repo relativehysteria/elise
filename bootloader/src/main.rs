@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use bootloader::{efi, println};
+use bootloader::efi;
 use serial::SerialDriver;
 
 #[unsafe(no_mangle)]
@@ -14,16 +14,15 @@ fn efi_main(image_handle: efi::ImageHandle,
         *shared = Some(driver);
     }
 
-    // Store the system table for global use by the bootloader
-    efi::SYSTEM_TABLE.store(system_table, core::sync::atomic::Ordering::SeqCst);
+    // Initialize the EFI structures required for the bootloader to work
+    efi::init_efi(image_handle, system_table);
 
-    // Get the free memory map from UEFI
-    let mem_map = efi::memory::get_memory_map()
-        .expect("Coudln't acquire the memory map from UEFI");
+    // Test out our PXE code
+    efi::pxe::download("ahoy");
 
-    println!("{mem_map:?}");
-
-    // TODO: somehow download a file over pxe
+    // // Get the free memory map from UEFI
+    // let mem_map = efi::memory::get_memory_map()
+    //     .expect("Coudln't acquire the memory map from UEFI");
 
     panic!("Reached the end of bootloader execution");
 }

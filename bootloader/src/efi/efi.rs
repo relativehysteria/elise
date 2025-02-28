@@ -5,21 +5,45 @@ use crate::efi::Status;
 use crate::efi::memory::{MemoryDescriptor, MemoryType};
 
 /// Handle to anything within the EFI spec
-pub type Handle = *const usize;
+pub type Handle = *mut usize;
 
 /// Handle to an EFI image
 pub type ImageHandle = Handle;
 
+/// Revision of EFI protocol
+pub type Revision = u64;
+
 /// The static pointer to the `SystemTable` structure that is passed to our
 /// bootloader by UEFI on initialization
-pub static SYSTEM_TABLE: AtomicPtr<SystemTable> =
+static SYSTEM_TABLE: AtomicPtr<SystemTable> =
     AtomicPtr::new(core::ptr::null_mut());
 
-/// Returns the pointer to the ['SystemTable'] structure passed by UEFI to the
+/// The static pointer to the bootloader `ImageHandle` that is passed to our
+/// bootloader by UEFI on initialization
+static BOOTLOADER_IMAGE: AtomicPtr<ImageHandle> =
+    AtomicPtr::new(core::ptr::null_mut());
+
+/// Initialize the structures required for a function EFI interface for the
+/// bootloader
+pub fn init_efi(mut bootloader_image: ImageHandle,
+                system_table: *mut SystemTable) {
+    SYSTEM_TABLE.store(system_table, Ordering::SeqCst);
+    BOOTLOADER_IMAGE.store(&mut bootloader_image, Ordering::SeqCst);
+}
+
+/// Returns a reference to the ['SystemTable'] structure passed by UEFI to the
 /// bootloader
 pub fn system_table() -> &'static SystemTable {
     let ptr = SYSTEM_TABLE.load(Ordering::Relaxed);
     assert!(!ptr.is_null(), "System table not initialized");
+    unsafe { &*ptr }
+}
+
+/// Returns a reference to the bootloader's `ImageHandle` passed by UEFI to the
+/// bootloader
+pub fn bootloader_image() -> &'static ImageHandle {
+    let ptr = BOOTLOADER_IMAGE.load(Ordering::Relaxed);
+    assert!(!ptr.is_null(), "Bootloader image not initialized");
     unsafe { &*ptr }
 }
 
@@ -157,7 +181,22 @@ pub struct BootServices {
     handle_protocol:              *const usize,
     reserved:                     *const usize,
     register_protocol_notify:     *const usize,
-    locate_handle:                *const usize,
+
+    /// Returns an array of handles that support a specified protocol
+    ///
+    /// The function returns an array of handles that match the `search_type`
+    /// request. If the input value of `buffer_size` is too small, the function
+    /// updates the `buffer_size` to the size of the buffer needed to obtain the
+    /// array.
+    pub locate_handle:
+        unsafe fn(search_type: SearchType,
+                  protocol:    &Guid,
+                  search_key:  *const u8,
+                  buffer_size: &mut usize,
+                  buffer:      *mut Handle) -> Status,
+
+    // Following are pointers to unused functions
+
     locate_device_path:           *const usize,
     install_configuration_table:  *const usize,
     load_image:                   *const usize,
@@ -176,8 +215,34 @@ pub struct BootServices {
     set_watchdog_timer:                     *const usize,
     connect_controller:                     *const usize,
     disconnect_controller:                  *const usize,
-    open_protocol:                          *const usize,
-    close_protocol:                         *const usize,
+
+    /// Queries a handle to determine if it supports a specified protocol.
+    /// If the protocol is supported by the handle, it opens the protocol on
+    /// behalf of the calling agent.
+    ///
+    /// This function can return a wide variety of errors. Check the UEFI
+    /// specification, chapter 7.3 to see which and why.
+    ///
+    /// Handles no longer in use must be freed using the `close_protocol()` boot
+    /// service.
+    pub open_protocol:
+        unsafe fn(handle: Handle,
+                  protocol: &Guid,
+                  interface: *mut *mut u8,
+                  agent: Handle,
+                  controller: Handle,
+                  attributes: u32) -> Status,
+
+    /// Closes a protocol on a handle that was opened using the
+    /// `open_protocol()` boot service.
+    pub close_protocol:
+        unsafe fn(handle: Handle,
+                  protocol: &Guid,
+                  agent: Handle,
+                  controller: Handle) -> Status,
+
+    // Following are pointers to unused functions
+
     open_protocol_information:              *const usize,
     protocols_per_handle:                   *const usize,
     locate_handle_buffer:                   *const usize,
@@ -188,4 +253,24 @@ pub struct BootServices {
     copy_mem:                               *const usize,
     set_mem:                                *const usize,
     create_event_ex:                        *const usize,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(C)]
+/// Specifies which handle(s) are to be returned by handle searching functions
+pub enum SearchType {
+    /// `protocol` and `search_key` are ignored and functions return an array of
+    /// every handle in the system
+    AllHandles,
+
+    /// `search_key` supplies the `registration` value returned by the
+    /// `register_protocol_notify()` service. The search function returns the
+    /// next handle that is new for registration. Only one handle is returned at
+    /// a time, starting with the first, and the caller must loop until no more
+    /// handles are returned. `protocol` is ignored for this search type
+    ByRegisterNotify,
+
+    /// All handles that support `protocol` are returned. `search_key` is
+    /// ignored for this search type
+    ByProtocol
 }
