@@ -165,10 +165,10 @@ pub fn get_memory_map() -> Result<RangeSet, Error> {
     let mut desc_version: u32 = 0;
 
     // Populate the memory map
-    let ret = unsafe {
+    let ret = Status::from(unsafe {
         get_memory_map(&mut size, memory_map.as_mut_ptr(), &mut map_key,
                        &mut desc_size, &mut desc_version)
-    };
+    });
 
     // Make sure we got the map correctly
     if ret != Status::Success { return Err(Error::WrongMemoryMapSize(size)); }

@@ -1,7 +1,6 @@
 //! Generic EFI definitions
 
 use core::sync::atomic::{AtomicPtr, Ordering};
-use crate::efi::Status;
 use crate::efi::memory::{MemoryDescriptor, MemoryType};
 
 /// Handle to anything within the EFI spec
@@ -12,6 +11,10 @@ pub type ImageHandle = Handle;
 
 /// Revision of EFI protocol
 pub type Revision = u64;
+
+/// The raw status value returned by EFI routines. This can be safely cast to
+/// the [`Status`] value using `from()`
+pub type RawStatus = usize;
 
 /// The static pointer to the `SystemTable` structure that is passed to our
 /// bootloader by UEFI on initialization
@@ -155,17 +158,17 @@ pub struct BootServices {
                   memory_map:         *mut MemoryDescriptor,
                   map_key:            &mut usize,
                   descriptor_size:    &mut usize,
-                  descriptor_version: &mut u32) -> Status,
+                  descriptor_version: &mut u32) -> RawStatus,
 
 
     /// Allocate pool memory
     pub allocate_pool:
         unsafe fn(pool_type: MemoryType,
                   size:      usize,
-                  buffer:    *mut *mut u8) -> Status,
+                  buffer:    *mut *mut u8) -> RawStatus,
 
     /// Return pool memory to the system
-    pub free_pool: unsafe fn(buffer: *mut u8) -> Status,
+    pub free_pool: unsafe fn(buffer: *mut u8) -> RawStatus,
 
     // Following are pointers to unused functions
 
@@ -193,7 +196,7 @@ pub struct BootServices {
                   protocol:    &Guid,
                   search_key:  *const u8,
                   buffer_size: &mut usize,
-                  buffer:      *mut Handle) -> Status,
+                  buffer:      *mut Handle) -> RawStatus,
 
     // Following are pointers to unused functions
 
@@ -206,7 +209,7 @@ pub struct BootServices {
 
     /// Terminates boot services
     pub exit_boot_services:
-        unsafe fn(image_handle: Handle, map_key: usize) -> Status,
+        unsafe fn(image_handle: Handle, map_key: usize) -> RawStatus,
 
     // Following are pointers to unused functions
 
@@ -231,7 +234,7 @@ pub struct BootServices {
                   interface: *mut *mut u8,
                   agent: Handle,
                   controller: Handle,
-                  attributes: u32) -> Status,
+                  attributes: u32) -> RawStatus,
 
     /// Closes a protocol on a handle that was opened using the
     /// `open_protocol()` boot service.
@@ -239,7 +242,7 @@ pub struct BootServices {
         unsafe fn(handle: Handle,
                   protocol: &Guid,
                   agent: Handle,
-                  controller: Handle) -> Status,
+                  controller: Handle) -> RawStatus,
 
     // Following are pointers to unused functions
 

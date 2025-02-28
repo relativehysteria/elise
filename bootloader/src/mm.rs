@@ -80,8 +80,8 @@ unsafe fn boot_alloc(layout: Layout) -> *mut u8 {
     unsafe {
         // Attempt to allocate the requested memory
         let mut buffer: *mut u8 = core::ptr::null_mut();
-        let status = (system_table().boot_svc.allocate_pool)(
-            MemoryType::LoaderData, layout.size(), &mut buffer);
+        let status = Status::from((system_table().boot_svc.allocate_pool)(
+            MemoryType::LoaderData, layout.size(), &mut buffer));
 
         // If the allocation fails for whatever reason, return a null pointer as
         // required by rust, otherwise return a pointer to the allocated memory
@@ -96,7 +96,8 @@ unsafe fn boot_alloc(layout: Layout) -> *mut u8 {
 /// Free memory using the boot service `free_pool()`
 unsafe fn boot_dealloc(ptr: *mut u8, _layout: Layout) {
     unsafe {
-        if (system_table().boot_svc.free_pool)(ptr) != Status::Success {
+        let status = Status::from((system_table().boot_svc.free_pool)(ptr));
+        if status != Status::Success {
             panic!("Couldn't free a memory pool using the boot services");
         }
     }

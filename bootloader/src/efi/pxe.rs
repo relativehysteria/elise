@@ -194,7 +194,7 @@ impl PxeDevice {
         let mut interface = core::ptr::null_mut();
 
         // Open the protocol for this handle
-        let status = unsafe {
+        let status = Status::from(unsafe {
             (system_table().boot_svc.open_protocol)(
                 handle,
                 &PXE_BASE_CODE_PROTOCOL_GUID,
@@ -203,10 +203,12 @@ impl PxeDevice {
                 core::ptr::null_mut(),
                 Self::BY_HANDLE,
             )
-        };
+        });
 
         // Make sure we got it correctly
-        assert!(status == Status::Success, "open protocol failed");
+        if status != Status::Success {
+            panic!("open protocol failed: {status:?}");
+        }
 
         // Cast the interface to the correct type
         let interface = unsafe {
@@ -221,16 +223,19 @@ impl PxeDevice {
 impl Drop for PxeDevice {
     fn drop(&mut self) {
         // Close the protocol
-        let status = unsafe {
+        let status = Status::from(unsafe {
             (system_table().boot_svc.close_protocol)(
                 self.handle,
                 &PXE_BASE_CODE_PROTOCOL_GUID,
                 *bootloader_image(),
                 core::ptr::null_mut(),
             )
-        };
-        assert!(status != Status::);
-        assert!(status == Status::Success, "close protocol failed");
+        });
+
+        // Make sure it got closed correctly
+        if status != Status::Success {
+            panic!("close protocol failed: {status:?}");
+        }
     }
 }
 

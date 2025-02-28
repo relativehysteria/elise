@@ -16,8 +16,8 @@ pub enum Status {
     Error(Error),
 }
 
-impl From<usize> for Status {
-    fn from(val: usize) -> Status {
+impl From<crate::efi::RawStatus> for Status {
+    fn from(val: crate::efi::RawStatus) -> Status {
         // Sign extend the code to make it not tied to a specific bitness
         let val = val as i32 as u32 as u64;
         let code = (val & !(1 << 63)) as usize;
