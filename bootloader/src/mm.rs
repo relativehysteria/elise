@@ -78,7 +78,7 @@ pub unsafe fn switch_to_post_boot(memory_map: rangeset::RangeSet) {
 /// Allocate memory using the boot service `allocate_pool()`
 unsafe fn boot_alloc(layout: Layout) -> *mut u8 {
     unsafe {
-        // Attempt to allocate the requesed memory
+        // Attempt to allocate the requested memory
         let mut buffer: *mut u8 = core::ptr::null_mut();
         let status = (system_table().boot_svc.allocate_pool)(
             MemoryType::LoaderData, layout.size(), &mut buffer);
