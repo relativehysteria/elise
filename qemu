@@ -31,4 +31,6 @@ sudo qemu-system-x86_64 \
     -nographic          \
     -bios "$ovmf"       \
     -device driver=e1000,netdev=net0 \
-    -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi
+    -device driver=e1000,netdev=net1 \
+    -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi \
+    -netdev user,id=net1

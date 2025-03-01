@@ -20,9 +20,18 @@ struct PxeBaseCodeProtocol {
     /// The revision of the PXE base code protocol.
     revision: Revision,
 
-    start:          *const usize,
-    stop:           *const usize,
-    dhcp:           *const usize,
+    /// Enables the use of the PXE protocol functions
+    start: unsafe fn(this: *const PxeBaseCodeProtocol, use_ipv6: bool),
+
+    // unused
+    stop: *const usize,
+
+    /// Attempts to complete a DHCP sequence
+    ///
+    /// If `sort_offers` is true, then the cached DHCP offer packets will be
+    /// sorted before they are tried.
+    dhcp: unsafe fn(this: *const PxeBaseCodeProtocol, sort_offers: bool),
+
     discover:       *const usize,
     mftp:           *const usize,
     udp_write:      *const usize,
@@ -33,28 +42,6 @@ struct PxeBaseCodeProtocol {
     set_station_ip: *const usize,
     set_packets:    *const usize,
     mode:           *const PxeMode,
-}
-
-impl PxeBaseCodeProtocol {
-    /// Returns a new empty `PxeBaseCodeProtocol`
-    fn empty() -> Self {
-        Self {
-            revision:       PXE_BASE_CODE_PROTOCOL_REVISION,
-            start:          core::ptr::null() as *const usize,
-            stop:           core::ptr::null() as *const usize,
-            dhcp:           core::ptr::null() as *const usize,
-            discover:       core::ptr::null() as *const usize,
-            mftp:           core::ptr::null() as *const usize,
-            udp_write:      core::ptr::null() as *const usize,
-            udp_read:       core::ptr::null() as *const usize,
-            set_ip_filter:  core::ptr::null() as *const usize,
-            arp:            core::ptr::null() as *const usize,
-            set_parameters: core::ptr::null() as *const usize,
-            set_station_ip: core::ptr::null() as *const usize,
-            set_packets:    core::ptr::null() as *const usize,
-            mode:           core::ptr::null() as *const PxeMode,
-        }
-    }
 }
 
 /// The maxmimum amount of entries in the `PxeMode` ARP cache
@@ -132,10 +119,10 @@ struct PxeMode {
     tos: u8,
 
     /// The device's current IP address
-    station_ip: net::IpAddr,
+    station_ip: net::RawIpAddr,
 
     /// The device's current subnet mask
-    subnet_mask: net::IpAddr,
+    subnet_mask: net::RawIpAddr,
 
     /// Cached DHCP Discover packet
     dhcp_discover: net::DhcpPacket,
@@ -187,7 +174,10 @@ impl PxeDevice {
     /// Attribute used to gain access to an interface by the handle protocol
     const BY_HANDLE: u32 = 0x00000001;
 
-    /// Create a new `PxeInterface` for the `handle`
+    /// Create a new `PxeInterface` for the `handle`.
+    ///
+    /// This only creates the struct and leaves it as returned by
+    /// `open_protocol()`
     fn new(handle: Handle) -> Self {
         // Create space for the interface that will be returned by the
         // `open_protocol()` call.
@@ -199,7 +189,7 @@ impl PxeDevice {
                 handle,
                 &PXE_BASE_CODE_PROTOCOL_GUID,
                 &mut interface,
-                *bootloader_image(),
+                bootloader_image(),
                 core::ptr::null_mut(),
                 Self::BY_HANDLE,
             )
@@ -207,7 +197,7 @@ impl PxeDevice {
 
         // Make sure we got it correctly
         if status != Status::Success {
-            panic!("open protocol failed: {status:?}");
+            panic!("PXE open protocol failed: {status:?}");
         }
 
         // Cast the interface to the correct type
@@ -215,8 +205,18 @@ impl PxeDevice {
             *(interface as *mut u8 as *mut PxeBaseCodeProtocol)
         };
 
+        // Make sure we have a supported revision
+        assert!(interface.revision == PXE_BASE_CODE_PROTOCOL_REVISION,
+            "Unsupported PXE revision");
+
         // Return it
         Self { interface, handle }
+    }
+
+    /// Checks whether this device has been started and has received DHCP ack
+    fn is_initialized(&self) -> bool {
+        let mode = unsafe { &*(self.interface.mode) };
+        mode.started && mode.dhcp_ack_received
     }
 }
 
@@ -227,20 +227,20 @@ impl Drop for PxeDevice {
             (system_table().boot_svc.close_protocol)(
                 self.handle,
                 &PXE_BASE_CODE_PROTOCOL_GUID,
-                *bootloader_image(),
+                bootloader_image(),
                 core::ptr::null_mut(),
             )
         });
 
         // Make sure it got closed correctly
         if status != Status::Success {
-            panic!("close protocol failed: {status:?}");
+            panic!("PXE close protocol failed: {status:?}");
         }
     }
 }
 
 pub fn download(kernel_filename: &str) {
-    // Get the boot services required
+    // Get the `locate_handle()` boot service pointer
     let locate_handle = system_table().boot_svc.locate_handle;
 
     // Call it once to get the size of the buffer required for all handles
@@ -258,6 +258,12 @@ pub fn download(kernel_filename: &str) {
     // Extend the buffer to the required length
     handles.reserve_exact(size);
 
+    // If there are no handles that handle PXE, this bootloader has no way of
+    // getting the kernel image
+    if size < core::mem::size_of::<Handle>() {
+        panic!("No devices support the PXE protocol");
+    }
+
     unsafe {
         // Call it a second time to actually get the buffer of handles
         (locate_handle)(SearchType::ByProtocol,
@@ -271,29 +277,24 @@ pub fn download(kernel_filename: &str) {
     }
 
     // Now we'll go through each handle, open the PXE protocol and check if the
-    // device has been set up already. Because we use PXE to boot the
-    // bootloader, there should be at least on device that will be already set
-    // up.
-    for handle in handles {
-        // Open the device
-        let device = PxeDevice::new(handle);
+    // device has been set up already. If PXE was used to boot the bootloader,
+    // there should be at least one device that will be already set up.
+    // If no valid DHCP lease is found, attempt to get it ourselves on the first
+    // device that handles PXE.
+    let device = handles.iter()
+        .map(|&handle| PxeDevice::new(handle))
+        .find(|device| device.is_initialized())
+        .expect("No net device with DHCP lease found. \
+            Bootloader must be booted through PXE!");
 
-        // Get the device mode
-        let mode = unsafe { &*(device.interface.mode) };
+    // Get the DHCP ack packet that gave us the lease
+    let mode = unsafe { &*(device.interface.mode) };
+    let ack_packet = mode.dhcp_ack;
 
-        // Check if it's been started and a DHCP ack has been received
-        if mode.started && mode.dhcp_ack_received {
-            // We found the device that likely booted our bootloader.
-            // This is the one we're looking for
-            println!("!!! Device likely found !!!");
-            println!("{} | {} | {} | {} | {}",
-                mode.started,
-                mode.dhcp_ack_received,
-                mode.dhcp_discover_valid,
-                mode.pxe_discover_valid,
-                mode.pxe_reply_received);
-        }
+    // Extract the server IP
+    assert!(!mode.using_ipv6, "IPv6 not supported.");
+    let server_ip = unsafe { ack_packet.v4.bootp_si_addr };
+    let client_ip = unsafe { ack_packet.v4.bootp_yi_addr };
 
-        println!("------");
-    }
+    // TODO: finish
 }

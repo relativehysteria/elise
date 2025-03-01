@@ -47,7 +47,7 @@ pub fn system_table() -> &'static SystemTable {
 pub fn bootloader_image() -> ImageHandle {
     let ptr = BOOTLOADER_IMAGE.load(Ordering::Relaxed);
     assert!(!ptr.is_null(), "Bootloader image not initialized");
-    unsafe { ptr }
+    ptr
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
