@@ -26,12 +26,40 @@ static SYSTEM_TABLE: AtomicPtr<SystemTable> =
 static BOOTLOADER_IMAGE: AtomicPtr<usize> =
     AtomicPtr::new(core::ptr::null_mut());
 
+#[repr(transparent)]
+/// A pointer to the system table that was passed to our bootloader by UEFI.
+/// This struct exists only to take ownership of the pointer and to make it
+/// impossible for other code to use when we don't want to
+pub struct SystemTablePtr(*mut SystemTable);
+
+impl SystemTablePtr {
+    /// Register the system table pointer globally so it can be used by
+    /// bootloader functions without an argument passed
+    fn register(self) {
+        SYSTEM_TABLE.store(self.0 as *mut SystemTable, Ordering::SeqCst);
+    }
+}
+
+#[repr(transparent)]
+/// A pointer to the bootloader image that was passed to us by UEFI.
+/// This struct exists only to take ownership of the pointer and to make it
+/// impossible for other code to use when we don't want to
+pub struct BootloaderImagePtr(ImageHandle);
+
+impl BootloaderImagePtr {
+    /// Register the bootloader image pointer globally so it can be used by
+    /// bootloader functions without an argument passed
+    fn register(self) {
+        BOOTLOADER_IMAGE.store(self.0 as *mut usize, Ordering::SeqCst);
+    }
+}
+
 /// Initialize the structures required for a function EFI interface for the
 /// bootloader
-pub fn init_efi(bootloader_image: *mut usize,
-                system_table: *mut SystemTable) {
-    SYSTEM_TABLE.store(system_table, Ordering::SeqCst);
-    BOOTLOADER_IMAGE.store(bootloader_image, Ordering::SeqCst);
+pub fn init_efi(bootloader_image: BootloaderImagePtr,
+                system_table: SystemTablePtr) {
+    bootloader_image.register();
+    system_table.register();
 }
 
 /// Returns a reference to the ['SystemTable'] structure passed by UEFI to the

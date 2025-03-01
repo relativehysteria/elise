@@ -5,8 +5,8 @@ use bootloader::efi;
 use serial::SerialDriver;
 
 #[unsafe(no_mangle)]
-fn efi_main(image_handle: efi::ImageHandle,
-            system_table: *mut efi::SystemTable) -> efi::Status {
+fn efi_main(image_handle: efi::BootloaderImagePtr,
+            system_table: efi::SystemTablePtr) -> efi::Status {
     // Initialize the serial driver
     {
         let driver = unsafe { SerialDriver::init() };
@@ -18,11 +18,7 @@ fn efi_main(image_handle: efi::ImageHandle,
     efi::init_efi(image_handle, system_table);
 
     // Test out our PXE code
-    efi::pxe::download("ahoy");
-
-    // // Get the free memory map from UEFI
-    // let mem_map = efi::memory::get_memory_map()
-    //     .expect("Coudln't acquire the memory map from UEFI");
+    unsafe { efi::pxe::download("test") };
 
     panic!("Reached the end of bootloader execution");
 }
