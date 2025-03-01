@@ -5,7 +5,7 @@ use bootloader::efi;
 use serial::SerialDriver;
 
 #[unsafe(no_mangle)]
-fn efi_main(image_handle: efi::BootloaderImagePtr,
+extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
             system_table: efi::SystemTablePtr) -> efi::Status {
     // Initialize the serial driver
     {
