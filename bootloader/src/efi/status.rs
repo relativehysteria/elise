@@ -18,16 +18,14 @@ pub enum Status {
 
 impl From<crate::efi::RawStatus> for Status {
     fn from(val: crate::efi::RawStatus) -> Status {
-        // Sign extend the code to make it not tied to a specific bitness
-        let val = val as i32 as u32 as u64;
-        let code = (val & !(1 << 63)) as usize;
+        let code = ((val as usize) << 1) >> 1;
 
-        match val {
-            0 => Self::Success,
-            0x0000000000000001..0x8000000000000000 =>
-                Self::Error(Error::from(code)),
-            0x8000000000000000..=u64::MAX =>
-                Self::Warning(Warning::from(code)),
+        if val == 0 {
+            Self::Success
+        } else if val < 0 {
+            Status::Warning(Warning::from(code))
+        } else {
+            Status::Error(Error::from(code))
         }
     }
 }

@@ -11,7 +11,7 @@ pub type ImageHandle = Handle;
 
 /// The raw status value returned by EFI routines. This can be safely cast to
 /// the [`Status`] value using `from()`
-pub type RawStatus = usize;
+pub type RawStatus = isize;
 
 /// The static pointer to the `SystemTable` structure that is passed to our
 /// bootloader by UEFI on initialization
