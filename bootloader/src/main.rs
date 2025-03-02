@@ -17,8 +17,5 @@ extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
     // Initialize the EFI structures required for the bootloader to work
     efi::init_efi(image_handle, system_table);
 
-    // Test out our PXE code
-    unsafe { efi::pxe::download("test") };
-
     panic!("Reached the end of bootloader execution");
 }

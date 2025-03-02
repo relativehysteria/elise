@@ -9,9 +9,6 @@ pub type Handle = *mut usize;
 /// Handle to an EFI image
 pub type ImageHandle = Handle;
 
-/// Revision of EFI protocol
-pub type Revision = u64;
-
 /// The raw status value returned by EFI routines. This can be safely cast to
 /// the [`Status`] value using `from()`
 pub type RawStatus = usize;
@@ -212,22 +209,7 @@ pub struct BootServices {
     handle_protocol:              *const usize,
     reserved:                     *const usize,
     register_protocol_notify:     *const usize,
-
-    /// Returns an array of handles that support a specified protocol
-    ///
-    /// The function returns an array of handles that match the `search_type`
-    /// request. If the input value of `buffer_size` is too small, the function
-    /// updates the `buffer_size` to the size of the buffer needed to obtain the
-    /// array.
-    pub locate_handle:
-        unsafe fn(search_type: SearchType,
-                  protocol:    &Guid,
-                  search_key:  *const u8,
-                  buffer_size: &mut usize,
-                  buffer:      *mut Handle) -> RawStatus,
-
-    // Following are pointers to unused functions
-
+    locate_handle:                *const usize,
     locate_device_path:           *const usize,
     install_configuration_table:  *const usize,
     load_image:                   *const usize,
@@ -246,34 +228,8 @@ pub struct BootServices {
     set_watchdog_timer:                     *const usize,
     connect_controller:                     *const usize,
     disconnect_controller:                  *const usize,
-
-    /// Queries a handle to determine if it supports a specified protocol.
-    /// If the protocol is supported by the handle, it opens the protocol on
-    /// behalf of the calling agent.
-    ///
-    /// This function can return a wide variety of errors. Check the UEFI
-    /// specification, chapter 7.3 to see which and why.
-    ///
-    /// Handles no longer in use must be freed using the `close_protocol()` boot
-    /// service.
-    pub open_protocol:
-        unsafe fn(handle: Handle,
-                  protocol: &Guid,
-                  interface: *mut *mut u8,
-                  agent: Handle,
-                  controller: Handle,
-                  attributes: u32) -> RawStatus,
-
-    /// Closes a protocol on a handle that was opened using the
-    /// `open_protocol()` boot service.
-    pub close_protocol:
-        unsafe fn(handle: Handle,
-                  protocol: &Guid,
-                  agent: Handle,
-                  controller: Handle) -> RawStatus,
-
-    // Following are pointers to unused functions
-
+    open_protocol:                          *const usize,
+    close_protocol:                         *const usize,
     open_protocol_information:              *const usize,
     protocols_per_handle:                   *const usize,
     locate_handle_buffer:                   *const usize,
@@ -284,24 +240,4 @@ pub struct BootServices {
     copy_mem:                               *const usize,
     set_mem:                                *const usize,
     create_event_ex:                        *const usize,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[repr(C)]
-/// Specifies which handle(s) are to be returned by handle searching functions
-pub enum SearchType {
-    /// `protocol` and `search_key` are ignored and functions return an array of
-    /// every handle in the system
-    AllHandles,
-
-    /// `search_key` supplies the `registration` value returned by the
-    /// `register_protocol_notify()` service. The search function returns the
-    /// next handle that is new for registration. Only one handle is returned at
-    /// a time, starting with the first, and the caller must loop until no more
-    /// handles are returned. `protocol` is ignored for this search type
-    ByRegisterNotify,
-
-    /// All handles that support `protocol` are returned. `search_key` is
-    /// ignored for this search type
-    ByProtocol
 }
