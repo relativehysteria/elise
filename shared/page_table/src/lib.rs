@@ -60,6 +60,7 @@ pub trait PhysMem {
             core::ptr::write_bytes(bytes, 0, layout.size());
         }
 
+        // Return it
         Some(allocation)
     }
 }
@@ -155,6 +156,54 @@ impl<F: Fn(u64) -> u8> MapRequest<F> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+/// The paging components of a page table mapping.
+pub struct Mapping {
+    /// Physical address of the Page Map Level 4 entry
+    pub pml4e: Option<PhysAddr>,
+
+    /// Physical address of the Page Directory Pointer entry
+    pub pdpe: Option<PhysAddr>,
+
+    /// Physical address of the Page Directory entry
+    pub pde: Option<PhysAddr>,
+
+    /// Physical address of the Pgae Table entry
+    pub pte: Option<PhysAddr>,
+
+    /// Physical address of the base of the page, offset into the page, and the
+    /// original raw page table entry
+    pub page: Option<(PhysAddr, u64, u64)>,
+}
+
+impl Mapping {
+    /// Returns the base virtual address of this page, if it exists
+    pub fn virt_base(&self) -> Option<VirtAddr> {
+        // Make sure this page is mapped in
+        if self.page.is_none() { return None; }
+
+        /// Size of a page table entry
+        const ES: u64 = core::mem::size_of::<u64>() as u64;
+
+        Some(VirtAddr(cpu::canonicalize_address(16,
+            ((self.pml4e.unwrap_or(PhysAddr(0)).0 & 0xFFF) / ES) << 39 |
+            ((self.pdpe .unwrap_or(PhysAddr(0)).0 & 0xFFF) / ES) << 30 |
+            ((self.pde  .unwrap_or(PhysAddr(0)).0 & 0xFFF) / ES) << 21 |
+            ((self.pte  .unwrap_or(PhysAddr(0)).0 & 0xFFF) / ES) << 12
+        )))
+    }
+
+    /// Returns the size of this page
+    pub fn page_type(&self) -> Option<PageType> {
+        // Make sure this page is mapped in
+        if self.page.is_none() { return None; }
+
+        if self.pde.is_none() { return Some(PageType::Page1G); }
+        if self.pte.is_none() { return Some(PageType::Page2M); }
+        Some(PageType::Page4K)
+    }
+}
+
 #[repr(C)]
 /// A 64-bit x86 page table
 pub struct PageTable {
@@ -176,6 +225,25 @@ impl PageTable {
     /// Returns the address of the page table
     pub fn table(&self) -> PhysAddr {
         self.table
+    }
+
+    /// Translate a virtual address in this page table into its components.
+    pub fn components<P: PhysMem>(&self, phys_mem: &mut P, vaddr: VirtAddr)
+            -> Option<Mapping> {
+        unsafe {
+            (*(self as *const Self as *mut Self))
+                .components_inner(phys_mem, vaddr)
+        }
+    }
+
+    /// Translate a virtual address in this page table into its components.
+    ///
+    /// This is the internal function and shouldn't be used unless necessary.
+    /// Use `translate()` instead.
+    pub unsafe fn components_inner<P: PhysMem>(
+            &mut self, phys_mem: &mut P, vaddr: VirtAddr) -> Option<Mapping> {
+        // TODO
+        None
     }
 
     /// Create a 4-KiB page table entry within this page table
@@ -221,8 +289,140 @@ impl PageTable {
             }
 
             // Add this mapping to the page table
-            // TODO: finish
+            unsafe {
+                if self.map_raw(phys_mem, VirtAddr(vaddr), request.page_type,
+                                entry).is_none() {
+                    // XXX: Failed to map; anything we did will be leaked
+                    return None;
+                }
+            }
         }
-        None
+
+        Some(())
+    }
+
+    /// Map a `vaddr` to a raw page table entry `raw`, using the page size
+    /// specified by `page_type`
+    pub unsafe fn map_raw<P: PhysMem>(
+            &mut self, phys_mem: &mut P, vaddr: VirtAddr,
+            page_type: PageType, raw: u64) -> Option<()> {
+        // Non present or large pages without page size bit set are invalid
+        if (raw & PAGE_PRESENT) == 0 ||
+                (page_type != PageType::Page4K && (raw & PAGE_SIZE == 0)) {
+            return None;
+        }
+
+        // Determine the state of the existing mapping
+        let mapping = self.components(phys_mem, vaddr)?;
+
+        // Don't re-map pages
+        if mapping.page.is_some() { return None; }
+
+        // Get all of the current mapping tables
+        let mut entries = [
+            mapping.pml4e,
+            mapping.pdpe,
+            mapping.pde,
+            mapping.pte,
+        ];
+
+        // Get the number of the entries based on the page type
+        let depth = match page_type {
+            PageType::Page4K => 4,
+            PageType::Page2M => 3,
+            PageType::Page1G => 2,
+        };
+
+        // Don't map a large page over a table containing smaller pages
+        if entries.get(depth).map_or(false, |x| x.is_some()) { return None; }
+
+        // After this point, the mapping _must_ be done
+        assert!(mapping.pml4e.is_some());
+
+        // Get the address components
+        let indices = [
+            (vaddr.0 >> 39) & 0x1FF,
+            (vaddr.0 >> 30) & 0x1FF,
+            (vaddr.0 >> 21) & 0x1FF,
+            (vaddr.0 >> 12) & 0x1FF,
+        ];
+
+        // Create page tables as needed while walking to the final page
+        for ii in 1..depth {
+            // Check if there is a table along the path
+            if entries[ii].is_none() {
+                // Allocate a new empty table
+                let table = phys_mem.alloc_phys_zeroed(
+                    Layout::from_size_align(4096, 4096).unwrap())?;
+
+                // Convert the address of the page table entry where we need
+                // to insert the new table
+                let ptr = unsafe {
+                    phys_mem.translate_mut(entries[ii - 1].unwrap(),
+                                           core::mem::size_of::<u64>())?
+                };
+
+                if ii >= 2 {
+                    // Get access to the entry with the reference count of the
+                    // table we're updating
+                    let ptr = unsafe {
+                        phys_mem.translate_mut(entries[ii - 2].unwrap(),
+                                               core::mem::size_of::<u64>())?
+                    };
+
+                    // Read the entry
+                    let nent = unsafe { core::ptr::read(ptr as *const u64) };
+
+                    // Update the reference count
+                    let in_use = (nent >> 52) & 0x3ff;
+                    let nent = (nent & !0x3ff0_0000_0000_0000) |
+                        ((in_use + 1) << 52);
+
+                    // Write in the new entry
+                    unsafe { core::ptr::write(ptr as *mut u64, nent); }
+                }
+
+                // Insert the new table at the entry in the table above us
+                unsafe {
+                    core::ptr::write(ptr as *mut u64,
+                        table.0 | PAGE_USER | PAGE_WRITE | PAGE_PRESENT);
+                }
+
+                // Update the mapping state as we have changed the tables
+                entries[ii] = Some(PhysAddr(
+                    table.0 + indices[ii] * core::mem::size_of::<u64>() as u64
+                ));
+            }
+        }
+
+        {
+            // Get access to the entry with the reference count of the
+            // table we're updating with the new page
+            let ptr = unsafe {
+                phys_mem.translate_mut(entries[depth - 2].unwrap(),
+                                       core::mem::size_of::<u64>())?
+            };
+
+            // Read the entry
+            let nent = unsafe { core::ptr::read(ptr as *const u64) };
+
+            // Update the reference count
+            let in_use = (nent >> 52) & 0x3ff;
+            let nent = (nent & !0x3ff0_0000_0000_0000) |
+                ((in_use + 1) << 52);
+
+            // Write in the new entry
+            unsafe { core::ptr::write(ptr as *mut u64, nent); }
+        }
+
+        // At this point, the tables have been created, and the page doesn't
+        // already exist. Thus, we can write in the mapping!
+        unsafe {
+            let ptr = phys_mem.translate_mut(entries[depth - 1].unwrap(),
+                core::mem::size_of::<u64>())?;
+            core::ptr::write(ptr as *mut u64, raw);
+        }
+
+        Some(())
     }
 }

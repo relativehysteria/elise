@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "cpu"
+version = "0.1.0"
+
+[[package]]
 name = "page_table"
 version = "0.1.0"
+dependencies = [
+ "cpu",
+]
