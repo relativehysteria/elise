@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use bootloader::efi;
+use bootloader::{efi, mm};
 use serial::SerialDriver;
 
 #[unsafe(no_mangle)]
@@ -14,8 +14,11 @@ extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
         *shared = Some(driver);
     }
 
-    // Initialize the EFI structures required for the bootloader to work
-    efi::init_efi(image_handle, system_table);
+    // Get the memory map from UEFI and exit the boot services
+    let map = unsafe { efi::memory_map_exit(system_table, image_handle) };
+
+    // Initialize the memory manager
+    mm::init(map.expect("Couldn't acquire memory map from UEFI."));
 
     panic!("Reached the end of bootloader execution");
 }

@@ -58,6 +58,6 @@ pub unsafe fn wrmsr(msr: u32, val: u64) {
 
 #[inline]
 /// Calls RDTSC
-pub unsafe fn rdtsc() -> usize {
-    unsafe { core::arch::x86_64::_rdtsc() as usize }
+pub unsafe fn rdtsc() -> u64 {
+    unsafe { core::arch::x86_64::_rdtsc() as u64 }
 }

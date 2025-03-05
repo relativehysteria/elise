@@ -1,4 +1,4 @@
-use crate::efi::{Status, system_table};
+use crate::efi::{Status, SystemTablePtr, BootloaderImagePtr};
 use rangeset::{RangeSet, Range};
 
 #[derive(Debug)]
@@ -151,9 +151,13 @@ impl From<u32> for MemoryType {
 /// The larger your system memory, the more descriptors should be expected.
 const N_MEM_DESC: usize = 2048;
 
-pub fn get_memory_map() -> Result<RangeSet, Error> {
-    // Find the pointer to the boot services table
-    let get_memory_map = system_table().boot_svc.get_memory_map;
+/// Get a memory map of [`MemoryDescriptor`]s and exit the boot services
+pub unsafe fn memory_map_exit(sys: SystemTablePtr, image: BootloaderImagePtr)
+        -> Result<RangeSet, Error> {
+    // Get the pointer to the services required
+    let boot_svc = unsafe { (*sys.0).boot_svc };
+    let get_memory_map = boot_svc.get_memory_map;
+    let exit_boot_svc  = boot_svc.exit_boot_services;
 
     // Allocate a buffer for the memory map
     let mut memory_map = [MemoryDescriptor::empty(); N_MEM_DESC];
@@ -180,9 +184,14 @@ pub fn get_memory_map() -> Result<RangeSet, Error> {
             size / core::mem::size_of::<MemoryDescriptor>())
     };
 
+    // Exit the boot services
+    let ret = Status::from(unsafe { exit_boot_svc(image, map_key) });
+
+    // Make sure we have exited successfully
+    if ret != Status::Success { return Err(Error::ExitBootSvcFailed) };
+
     // Now, only retain the memory that we are free to use in a memory allocator
     let mut free_memory = RangeSet::new();
-
     for desc in memory_map.iter() {
         // Skip all regions that will become invalid post boot services exit
         if !desc.mem_type.available_post_boot_svc_exit() { continue; }
@@ -196,7 +205,8 @@ pub fn get_memory_map() -> Result<RangeSet, Error> {
         // Write the memory down. This will only ever return errors if the UEFI
         // sabotages us and gives us corrupted information. At that point it is
         // safer to just panic instead of handling the errors.
-        free_memory.insert(Range::new(desc.phys_addr, end).unwrap()).unwrap();
+        free_memory.insert(Range::new(desc.phys_addr as u64, end as u64)
+            .unwrap()).unwrap();
     }
 
     // Reserve the first page to avoid writing into legacy structures
