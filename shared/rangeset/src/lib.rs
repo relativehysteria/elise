@@ -26,7 +26,7 @@ pub enum Error {
     ZeroSizedAllocation,
 
     /// An attempt was made to allocate memory not aligned to a power of 2
-    WrongAlignment(usize),
+    WrongAlignment(u64),
 }
 
 /// An inclusive range. `RangeInclusive` doesn't implement `Copy`, so it's not
@@ -35,17 +35,17 @@ pub enum Error {
 #[repr(C)]
 pub struct Range {
     /// Start of the range (inclusive)
-    start: usize,
+    start: u64,
 
     /// End of the range (inclusive)
-    end: usize,
+    end: u64,
 }
 
 impl Range {
     /// Returns a new range.
     ///
     /// Returns an error if the range is invalid (i.e. `start > end`).
-    pub fn new(start: usize, end: usize) -> Result<Self, Error> {
+    pub fn new(start: u64, end: u64) -> Result<Self, Error> {
         unsafe {
         (start <= end)
             .then_some(Self::new_unchecked(start, end))
@@ -55,7 +55,7 @@ impl Range {
 
     /// Returns a new possibly incorrect range.
     #[inline(always)]
-    unsafe fn new_unchecked(start: usize, end: usize) -> Self {
+    unsafe fn new_unchecked(start: u64, end: u64) -> Self {
         Self { start, end }
     }
 
@@ -84,7 +84,7 @@ pub struct RangeSet {
     ranges: [Range; 256],
 
     /// Number of range entries in use.
-    in_use: usize,
+    in_use: u32,
 }
 
 impl RangeSet {
@@ -98,12 +98,12 @@ impl RangeSet {
 
     /// Returns all the used entries in a `RangeSet`
     pub fn entries(&self) -> &[Range] {
-        &self.ranges[..self.in_use]
+        &self.ranges[..self.in_use as usize]
     }
 
     /// Compute the size of the range covered by this rangeset
-    pub fn len(&self) -> Option<usize> {
-        self.entries().iter().try_fold(0usize, |acc, x| {
+    pub fn len(&self) -> Option<u64> {
+        self.entries().iter().try_fold(0u64, |acc, x| {
             Some(acc + (x.end - x.start).checked_add(1)?)
         })
     }
@@ -116,10 +116,12 @@ impl RangeSet {
     /// Delete the range at `idx`
     fn delete(&mut self, idx: usize) -> Result<(), Error> {
         // Make sure we don't index out of bounds
-        if idx >= self.in_use { return Err(Error::IndexOutOfBounds(idx)); }
+        if idx >= self.in_use as usize {
+            return Err(Error::IndexOutOfBounds(idx));
+        }
 
         // Put the delete range to the end
-        for i in idx..self.in_use - 1 {
+        for i in idx..self.in_use as usize - 1 {
             self.ranges.swap(i, i + 1);
         }
 
@@ -134,7 +136,7 @@ impl RangeSet {
     /// into one.
     pub fn insert(&mut self, mut range: Range) -> Result<(), Error> {
         let mut idx = 0;
-        while idx < self.in_use {
+        while idx < self.in_use as usize {
             let entry = self.ranges[idx];
 
             // Calculate this entry's end to check for touching
@@ -158,13 +160,13 @@ impl RangeSet {
         }
 
         // Ensure that our ranges don't overflow
-        if self.in_use >= self.ranges.len() {
+        if self.in_use as usize >= self.ranges.len() {
             return Err(Error::RangeSetOverflow);
         }
 
         // Shift ranges if necessary
-        if idx < self.in_use {
-            self.ranges.copy_within(idx..self.in_use, idx + 1);
+        if idx < self.in_use as usize {
+            self.ranges.copy_within(idx..self.in_use as usize, idx + 1);
         }
 
         // Insert the range
@@ -187,7 +189,7 @@ impl RangeSet {
 
         // Go through each entry in our ranges
         let mut idx = 0;
-        while idx < self.in_use {
+        while idx < self.in_use as usize {
             let entry = self.ranges[idx];
 
             // If there is no overlap with this range, skip to the next entry
@@ -230,12 +232,12 @@ impl RangeSet {
     #[inline(always)]
     fn split_entry(&mut self, idx: usize, range: Range) -> Result<bool, Error> {
         // Make sure we index in bounds
-        if idx >= self.in_use {
+        if idx >= self.in_use as usize {
             return Err(Error::IndexOutOfBounds(idx));
         }
 
         // Make sure we have space
-        if self.in_use >= self.ranges.len() {
+        if self.in_use as usize >= self.ranges.len() {
             return Err(Error::RangeSetOverflow);
         }
 
@@ -256,8 +258,8 @@ impl RangeSet {
         }
 
         // Shift the remaining entries to the right by one to make space
-        if idx + 1 < self.in_use {
-            self.ranges.copy_within(idx + 1..self.in_use, idx + 2);
+        if idx + 1 < self.in_use as usize {
+            self.ranges.copy_within(idx + 1..self.in_use as usize, idx + 2);
         }
 
         // Insert the second half in the correct position
@@ -275,8 +277,8 @@ impl RangeSet {
     /// an error will be returned. If the allocation can't be satisfied for
     /// other reasons (i.e. there's not enough free memory), `Ok(None)` will be
     /// returned.
-    pub fn allocate(&mut self, size: usize, align: usize)
-            -> Result<Option<usize>, Error> {
+    pub fn allocate(&mut self, size: u64, align: u64)
+            -> Result<Option<u64>, Error> {
         // Don't allow 0-sized allocations
         if size == 0 { return Err(Error::ZeroSizedAllocation); }
 
