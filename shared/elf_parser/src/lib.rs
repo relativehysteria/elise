@@ -13,6 +13,16 @@ macro_rules! get_bytes {
     }}
 }
 
+/// Read bytes and little-endian interpret them as a given type
+macro_rules! get_bytes_no_err {
+    ($bytes:expr, $offset:expr, $type:ty) => {{
+        use core::mem::size_of;
+        let range = ($offset as usize)..(($offset as usize)
+            .checked_add(size_of::<$type>())?);
+        <$type>::from_le_bytes($bytes.get(range)?.try_into().ok()?)
+    }}
+}
+
 /// Virtual address type for better readability
 pub type VirtAddr = u64;
 
@@ -44,8 +54,8 @@ pub enum Error {
     /// A different machine type was expected
     WrongMachine(u16),
 
-    /// The virtual address of the section was not aligned
-    Unaligned,
+    /// The alignment provided by the ELF for a segment wasn't 4-KiB
+    WrongAlignment,
 
     /// The raw size of the segment in the file was larger than the virtual size
     RawSizeTooLarge,
@@ -78,6 +88,101 @@ impl Permissions {
         let write   = (flags & (1 << 1)) == 1;
         let read    = (flags & (1 << 2)) == 1;
         Self::new(read, write, execute)
+    }
+}
+
+/// Represents a loadable segment in the ELF file
+pub struct Segment<'a> {
+    /// Aligned virtual address of the segment
+    pub vaddr: VirtAddr,
+
+    /// Offset from vaddr where segment data should be placed
+    pub offset: u64,
+
+    /// Size of the segment in memory
+    pub vsize: VirtSize,
+
+    /// Raw segment data
+    pub bytes: &'a [u8],
+
+    /// Memory permissions of the segment
+    pub permissions: Permissions,
+}
+
+/// An iterator of `Segment`
+pub struct ElfSegments<'a> {
+    /// Reference to the parsed ELF file
+    elf: &'a Elf<'a>,
+
+    /// Current segment index
+    index: usize,
+}
+
+impl<'a> core::iter::Iterator for ElfSegments<'a> {
+    type Item = Result<Segment<'a>, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.elf.bytes;
+
+        // Stop iterating if we've gone through all program headers
+        if self.index >= self.elf.ph_num { return None; }
+
+        // Get the offset to the beginning of this program header.
+        // This calculation won't overflow; it's been checked during parsing
+        let offset = self.elf.ph_offset +
+            self.index * self.elf.ph_entry_size as usize;
+
+        // Increment index for the next call to next
+        self.index += 1;
+
+        // Skip segments that are not loadable
+        if get_bytes_no_err!(bytes, offset + 0x00, u32) != 0x00000001 {
+            return self.next();
+        }
+
+        // Get the segment memory permissions
+        let perms = Permissions::from_flags(
+            get_bytes_no_err!(bytes, offset + 0x04, u32));
+
+        // Get the offset of the segment in the file image
+        let raw_offset = get_bytes_no_err!(bytes, offset + 0x08, u64) as usize;
+
+        // Get the virtual address of the segment in memory
+        let vaddr = get_bytes_no_err!(bytes, offset + 0x10, u64);
+
+        // Get the size of the segment in file (may be 0)
+        let raw_size = get_bytes_no_err!(bytes, offset + 0x20, u64) as usize;
+
+        // Get the size of the segment in memory
+        let vsize = get_bytes_no_err!(bytes, offset + 0x28, u64);
+
+        // The segment size in the file should never be larger than the
+        // virtual size
+        if raw_size as u64 > vsize { return Some(Err(Error::RawSizeTooLarge)); }
+        if raw_offset.checked_add(raw_size)? >
+                bytes.len() {
+            return Some(Err(Error::NotEnoughBytes))
+        }
+
+        // Get the required alignment mask for this segment
+        let align_mask = get_bytes_no_err!(bytes, offset + 0x30, u64) - 1;
+        if align_mask != 0xFFF { return Some(Err(Error::WrongAlignment)); }
+
+        // Get the aligned virtual address and the offset for this segment
+        let aligned_vaddr = vaddr & (!align_mask);
+        let virtual_offset = vaddr - aligned_vaddr;
+
+        // Extract raw segment data
+        let segment_bytes =
+            bytes.get(raw_offset..raw_offset.checked_add(raw_size)?)?;
+
+        Some(Ok(Segment {
+            vaddr: aligned_vaddr,
+            offset: virtual_offset,
+            vsize,
+            bytes: segment_bytes,
+            permissions: perms,
+        }))
     }
 }
 
@@ -163,65 +268,8 @@ impl<'a> Elf<'a> {
         Ok(Self { bytes, entry, ph_offset, ph_entry_size, ph_num })
     }
 
-    /// Invoke a closure on every loadable segment with the format
-    /// (vaddr, offset from vaddr, vsize, raw segment bytes, permissions)
-    /// where
-    ///     * `vaddr` is the aligned virtual address of the segment
-    ///     * `offset` is the offset from the `vaddr` where the segment bytes
-    ///       should be placed
-    ///     * `vsise` is the size of the raw segment bytes
-    ///     * `raw segment bytes` are the raw segment bytes
-    ///     * `permissions` are the memory permissions for this segment
-    pub fn segments<F>(&self, mut closure: F) -> Result<(), Error>
-    where F: FnMut(VirtAddr, u64, VirtSize, &[u8], Permissions) -> Option<()> {
-        let bytes = self.bytes;
-
-        // Go through every segment
-        for segment in 0..self.ph_num {
-            // Get the offset to the beginning of this program header.
-            // This calculation won't overflow; it's been checked during parsing
-            let offset = self.ph_offset + segment * self.ph_entry_size as usize;
-
-            // Skip segments that are not loadable
-            if get_bytes!(bytes, offset + 0x00, u32) != 0x00000001 { continue; }
-
-            // Get the segment memory permissions
-            let perms = Permissions::from_flags(
-                get_bytes!(bytes, offset + 0x04, u32));
-
-            // Get the offset of the segment in the file image
-            let raw_offset = get_bytes!(bytes, offset + 0x08, u64) as usize;
-
-            // Get the virtual address of the segment in memory
-            let vaddr = get_bytes!(bytes, offset + 0x10, u64);
-
-            // Get the size of the segment in file (may be 0)
-            let raw_size = get_bytes!(bytes, offset + 0x20, u64) as usize;
-
-            // Get the size of the segment in memory
-            let vsize = get_bytes!(bytes, offset + 0x28, u64);
-
-            // The segment size in the file should never be larger than the
-            // virtual size
-            if raw_size as u64 > vsize { return Err(Error::RawSizeTooLarge); }
-
-            // Get the required alignment mask for this segment
-            let align_mask = get_bytes!(bytes, offset + 0x30, u64) - 1;
-
-            // Get the aligned virtual address and the offset for this segment
-            let aligned_vaddr = vaddr & (!align_mask);
-            let virtual_offset = vaddr - aligned_vaddr;
-
-            // Invoke the closure
-            closure(
-                aligned_vaddr,
-                virtual_offset,
-                vsize,
-                bytes.get(raw_offset..raw_offset.checked_add(raw_size)
-                    .ok_or(Error::ParseFailure)?).ok_or(Error::ParseFailure)?,
-                perms
-            ).ok_or(Error::SegmentsClosureFailed)?;
-        }
-        Ok(())
+    /// Returns an iterator over loadable segments in the ELF file
+    pub fn segments(&'a self) -> ElfSegments<'a> {
+        ElfSegments { elf: self, index: 0 }
     }
 }
