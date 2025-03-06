@@ -1,5 +1,9 @@
 //! Routines for creating and manipulating 4-level x86_64 page tables
 
+// The code here adheres to the Intel spec. A large portion of it was taken from
+// Brandon -- it's good and I wouldn't write it any different (apart from the
+// parts which I have indeed rewritten :D).
+
 use core::alloc::Layout;
 
 /// Page table flag indicating this page or table is present
@@ -156,7 +160,7 @@ impl<F: Fn(u64) -> u8> MapRequest<F> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 /// The paging components of a page table mapping.
 pub struct Mapping {
     /// Physical address of the Page Map Level 4 entry
@@ -202,6 +206,16 @@ impl Mapping {
         if self.pte.is_none() { return Some(PageType::Page2M); }
         Some(PageType::Page4K)
     }
+
+    /// Returns the components of `vaddr`
+    fn get_indices(vaddr: VirtAddr) -> [u64; 4] {
+        [
+            (vaddr.0 >> 39) & 0x1FF,
+            (vaddr.0 >> 30) & 0x1FF,
+            (vaddr.0 >> 21) & 0x1FF,
+            (vaddr.0 >> 12) & 0x1FF,
+        ]
+    }
 }
 
 #[repr(C)]
@@ -242,8 +256,74 @@ impl PageTable {
     /// Use `translate()` instead.
     pub unsafe fn components_inner<P: PhysMem>(
             &mut self, phys_mem: &mut P, vaddr: VirtAddr) -> Option<Mapping> {
-        // TODO
-        None
+        // Start with an empty mapping
+        let mut ret = Mapping::default();
+
+        // Make sure the address is canonical
+        if cpu::canonicalize_address(16, vaddr.0) != vaddr.0 { return None; }
+
+        // Get the components of the address
+        let indices = Mapping::get_indices(vaddr);
+
+        // Get the address of the page table
+        let mut table = self.table;
+
+        for (depth, &index) in indices.iter().enumerate() {
+            // Get the physical address of the page table entry
+            let ptp = PhysAddr(table.0 + index * size_of::<u64>() as u64);
+
+            // Fill in the address of the entry we are decoding
+            match depth {
+                0 => ret.pml4e = Some(ptp),
+                1 => ret.pdpe  = Some(ptp),
+                2 => ret.pde   = Some(ptp),
+                3 => ret.pte   = Some(ptp),
+                _ => unreachable!(),
+            }
+
+            // Get a virtual address for this entry
+            let vad = unsafe { phys_mem.translate(ptp, size_of::<u64>())? };
+            let ent = unsafe { core::ptr::read(vad as *const u64) };
+
+            // Check if this page is present
+            if (ent & PAGE_PRESENT) == 0 {
+                // Page is not present, break out and stop the translation
+                break;
+            }
+
+            // Update the table to point to the next level
+            table = PhysAddr(ent & 0xffffffffff000);
+
+            // Check if this is the page mapping and not pointing to a table
+            if depth == 3 || (ent & PAGE_SIZE) != 0 {
+                // Page size bit is not valid (reserved as 0) for the PML4E,
+                // return out the partially walked table
+                if depth == 0 { break; }
+
+                // Determine the mask for this page size
+                let page_mask = match depth {
+                    1 => PageType::Page1G as u64 - 1,
+                    2 => PageType::Page2M as u64 - 1,
+                    3 => PageType::Page4K as u64 - 1,
+                    _ => unreachable!(),
+                };
+
+                // At this point, the page is valid, mask off all bits that
+                // arent part of the address
+                let page_paddr = table.0 & !page_mask;
+
+                // Compute the offset in the page for the `vaddr`
+                let page_off = vaddr.0 & page_mask;
+
+                // Store the page and offset
+                ret.page = Some((PhysAddr(page_paddr), page_off, ent));
+
+                // Translation done
+                break;
+            }
+        }
+
+        Some(ret)
     }
 
     /// Create a 4-KiB page table entry within this page table
@@ -339,13 +419,8 @@ impl PageTable {
         // After this point, the mapping _must_ be done
         assert!(mapping.pml4e.is_some());
 
-        // Get the address components
-        let indices = [
-            (vaddr.0 >> 39) & 0x1FF,
-            (vaddr.0 >> 30) & 0x1FF,
-            (vaddr.0 >> 21) & 0x1FF,
-            (vaddr.0 >> 12) & 0x1FF,
-        ];
+        // Get the components of the address
+        let indices = Mapping::get_indices(vaddr);
 
         // Create page tables as needed while walking to the final page
         for ii in 1..depth {
