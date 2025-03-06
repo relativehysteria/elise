@@ -32,6 +32,13 @@ pub struct PhysAddr(pub u64);
 /// A strongly typed virtual address.
 pub struct VirtAddr(pub u64);
 
+impl VirtAddr {
+    /// Returns whether the virtual address is aligned to `page_type`
+    pub fn is_aligned(&self, page_type: PageType) -> bool {
+        (self.0 & (!(page_type as u64 - 1))) == 0
+    }
+}
+
 /// A trait that allows generic access to physical memory.
 ///
 /// This allows handling of the physical to virtual translations that are done
@@ -72,7 +79,7 @@ pub trait PhysMem {
 /// A strongly typed structure for paging memory permission bits.
 ///
 /// `read` isn't here because all present pages must be readable
-pub struct Permission {
+pub struct Permissions {
     /// Marks the memory as writable
     pub write: bool,
 
@@ -83,7 +90,7 @@ pub struct Permission {
     pub user: bool,
 }
 
-impl Permission {
+impl Permissions {
     /// Creates a new permission struct given arguments
     pub fn new(write: bool, execute: bool, user: bool) -> Self {
         Self { write, execute, user }
@@ -125,7 +132,7 @@ pub struct MapRequest<F: Fn(u64) -> u8> {
     pub size: u64,
 
     /// The permission bits for the new entry
-    pub permissions: Permission,
+    pub permissions: Permissions,
 
     /// The function that will be called on each byte of the new page.
     /// It will be invoked with the current offset into the mapping and the
@@ -136,21 +143,18 @@ pub struct MapRequest<F: Fn(u64) -> u8> {
 impl<F: Fn(u64) -> u8> MapRequest<F> {
     /// Creates a new mapping request.
     ///
-    /// The entry will be `PageType::Page4K` and the memory won't be initialized
-    pub fn new(vaddr: VirtAddr, size: u64, permissions: Permission) -> Self {
-        Self {
-            page_type: PageType::Page4K,
-            vaddr,
-            size,
-            permissions,
-            init: None::<F>
-        }
-    }
-
-    /// Sets the page type for the new page mapping
-    pub fn page_type(mut self, ptype: PageType) -> Self {
-        self.page_type = ptype;
-        self
+    /// Returns `None` if the `vaddr` is not aligned to the `page_type`
+    pub fn new(vaddr: VirtAddr, page_type: PageType, size: u64,
+               permissions: Permissions) -> Option<Self> {
+        vaddr.is_aligned(page_type).then_some(
+            Self {
+                page_type,
+                vaddr,
+                size,
+                permissions,
+                init: None::<F>
+            }
+        )
     }
 
     /// Sets the initialization function for the new memory mapping
@@ -221,6 +225,8 @@ impl Mapping {
 #[repr(C)]
 /// A 64-bit x86 page table
 pub struct PageTable {
+    /// The physical address of the top-level page table. This is typically the
+    /// value in `cr3`
     table: PhysAddr,
 }
 
@@ -326,7 +332,7 @@ impl PageTable {
         Some(ret)
     }
 
-    /// Create a 4-KiB page table entry within this page table
+    /// Create a 4-KiB page table entry within this page table.
     pub fn map<F: Fn(u64) -> u8, P: PhysMem>(
             &mut self, phys_mem: &mut P, request: MapRequest<F>) -> Option<()> {
         let vaddr = request.vaddr.0;

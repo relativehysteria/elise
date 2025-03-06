@@ -8,10 +8,10 @@ use crate::SHARED;
 /// backlog.
 pub fn init(memory: RangeSet) {
     // If the memory has been already initialized, don't reinitialize it
-    if SHARED.free_memory.lock().is_some() { return; }
+    if SHARED.free_memory_ref().lock().is_some() { return; }
 
     // Initialize the memory
-    let mut free_mem = SHARED.free_memory.lock();
+    let mut free_mem = SHARED.free_memory_ref().lock();
     *free_mem = Some(memory);
 }
 
@@ -35,7 +35,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Get access to the physical memory, allocate some bytes and return
         // the pointer
-        let mut phys_mem = SHARED.free_memory.lock();
+        let mut phys_mem = SHARED.free_memory_ref().lock();
         phys_mem.as_mut().and_then(|x| {
             x.allocate(layout.size() as u64, layout.align() as u64).ok()?
         }).unwrap_or(0) as *mut u8
@@ -49,7 +49,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
         // If the pointer was not allocated by [`alloc()`], it can 'free up'
         // 1) ranges that can't be satisfied by the backing physical memory
         // 2) ranges that don't belong to the caller
-        let mut phys_mem = SHARED.free_memory.lock();
+        let mut phys_mem = SHARED.free_memory_ref().lock();
         let ptr = ptr as usize;
         phys_mem.as_mut().and_then(|x| {
             let end = ptr.checked_add(layout.size().checked_sub(1)?)?;

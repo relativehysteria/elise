@@ -21,15 +21,32 @@ pub struct Shared {
     /// map, all pointers in this memory point to valid physical memory even if
     /// paging in the bootloader is enabled (as long as it's the one provided by
     /// UEFI).
-    pub free_memory: SpinLock<Option<RangeSet>>,
+    free_memory: SpinLock<Option<RangeSet>>,
+
+    /// Physical address of where the kernel image to boot is present.
+    ///
+    /// If this is `None`, the kernel image embedded within the bootloader will
+    /// be booted instead of this.
+    kernel_image_ptr: SpinLock<Option<u64>>,
 }
 
 impl Shared {
     /// Creates an empty structure for shared data
     pub const fn new() -> Self {
         Self {
-            serial: SpinLock::new(None),
-            free_memory: SpinLock::new(None),
+            serial:           SpinLock::new(None),
+            free_memory:      SpinLock::new(None),
+            kernel_image_ptr: SpinLock::new(None),
         }
+    }
+
+    /// Returns a reference to the free memory lock
+    pub fn free_memory_ref(&self) -> &SpinLock<Option<RangeSet>> {
+        &self.free_memory
+    }
+
+    /// Returns a reference to the kernel image pointer lock
+    pub fn kernel_image_ref(&self) -> &SpinLock<Option<u64>> {
+        &self.kernel_image_ptr
     }
 }

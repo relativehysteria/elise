@@ -1,22 +1,24 @@
 #!/bin/sh
 
-[ "$1" = "" ] && target="debug" || target="release"
+# Determine build target (default to debug)
+[ -z "$1" ] && target="debug" || target="release"
 
-# Build the images
-pushd bootloader
-if [ "$target" = "debug" ]; then
-    cargo build
-else
-    cargo build --release
-fi
-built=$?
-popd
+# function to build a component and handle errors
+build_component() {
+    dir="$1"
+    pushd "$dir" || exit 1
+    cargo build $( [ "$target" = "release" ] && echo "--release" )
+    build_status=$?
+    popd || exit 1
+    [ $build_status -ne 0 ] && echo "$dir build failed" && exit 1
+}
 
-# If the build failed, exit
-if [ ! $built -eq 0 ]; then
-    echo "build failed"
-    exit
-fi
+# Build the kernel and copy it to where the bootloader expects it
+build_component "kernel"
+cp "kernel/target/x86_64-unknown-linux-gnu/$target/kernel" "kernel/target/kernel.bin" || exit 1
+
+# Build the bootloader
+build_component "bootloader"
 
 # Start qemu with the bootloader image
 tftp="bootloader/target/x86_64-unknown-uefi/$target"
@@ -25,11 +27,11 @@ smp="2,cores=2,threads=1,sockets=1"
 mem_mb="4096"
 
 sudo qemu-system-x86_64 \
-    -enable-kvm         \
-    -m "$mem_mb"        \
-    -smp "$smp"         \
-    -nographic          \
-    -bios "$ovmf"       \
+    -enable-kvm \
+    -m "$mem_mb" \
+    -smp "$smp" \
+    -nographic \
+    -bios "$ovmf" \
     -device driver=e1000,netdev=net0 \
     -device driver=e1000,netdev=net1 \
     -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi \
