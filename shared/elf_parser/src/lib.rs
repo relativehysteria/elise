@@ -29,6 +29,7 @@ pub type VirtAddr = u64;
 /// Virtual size type for better readability
 pub type VirtSize = u64;
 
+#[derive(Debug, Clone)]
 pub enum Error {
     /// The byte data couldn't be parsed
     ParseFailure,
@@ -64,6 +65,7 @@ pub enum Error {
     SegmentsClosureFailed,
 }
 
+#[derive(Debug, Clone)]
 /// Permission bits for memory segments
 pub struct Permissions {
     /// Marks the memory as readable
@@ -84,13 +86,14 @@ impl Permissions {
 
     /// Returns a new permission struct encoding the ELF program header flags
     pub fn from_flags(flags: u32) -> Self {
-        let execute = (flags & (1 << 0)) == 1;
-        let write   = (flags & (1 << 1)) == 1;
-        let read    = (flags & (1 << 2)) == 1;
+        let execute = (flags & (1 << 0)) != 0;
+        let write   = (flags & (1 << 1)) != 0;
+        let read    = (flags & (1 << 2)) != 0;
         Self::new(read, write, execute)
     }
 }
 
+#[derive(Debug, Clone)]
 /// Represents a loadable segment in the ELF file
 pub struct Segment<'a> {
     /// Aligned virtual address of the segment
@@ -109,6 +112,7 @@ pub struct Segment<'a> {
     pub permissions: Permissions,
 }
 
+#[derive(Debug, Clone)]
 /// An iterator of `Segment`
 pub struct ElfSegments<'a> {
     /// Reference to the parsed ELF file
@@ -186,6 +190,7 @@ impl<'a> core::iter::Iterator for ElfSegments<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 /// A validated ELF file
 pub struct Elf<'a> {
     /// Raw bytes of the ELF file
