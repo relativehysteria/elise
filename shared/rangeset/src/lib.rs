@@ -77,7 +77,7 @@ impl Range {
 }
 
 /// A set of non-overlapping inclusive `Range`s.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct RangeSet {
     /// Array of ranges in the set

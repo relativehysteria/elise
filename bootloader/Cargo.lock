@@ -7,6 +7,8 @@ name = "bootloader"
 version = "0.1.0"
 dependencies = [
  "cpu",
+ "elf_parser",
+ "page_table",
  "rangeset",
  "serial",
  "shared_data",
@@ -16,6 +18,20 @@ dependencies = [
 [[package]]
 name = "cpu"
 version = "0.1.0"
+
+[[package]]
+name = "elf_parser"
+version = "0.1.0"
+dependencies = [
+ "page_table",
+]
+
+[[package]]
+name = "page_table"
+version = "0.1.0"
+dependencies = [
+ "cpu",
+]
 
 [[package]]
 name = "rangeset"
@@ -32,6 +48,8 @@ dependencies = [
 name = "shared_data"
 version = "0.1.0"
 dependencies = [
+ "elf_parser",
+ "page_table",
  "rangeset",
  "serial",
  "spinlock",

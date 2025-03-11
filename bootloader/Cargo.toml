@@ -9,3 +9,5 @@ cpu = { path = "../shared/cpu" }
 serial = { path = "../shared/serial" }
 spinlock = { path = "../shared/spinlock" }
 rangeset = { path = "../shared/rangeset" }
+page_table = { path = "../shared/page_table" }
+elf_parser = { path = "../shared/elf_parser" }

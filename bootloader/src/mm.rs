@@ -2,16 +2,50 @@
 
 use core::alloc::{ GlobalAlloc, Layout };
 use rangeset::{ RangeSet, Range };
+use page_table::{PhysAddr, PhysMem};
 use crate::SHARED;
+
+#[repr(transparent)]
+/// Wrapper around a rangeset that implements the `PhysMem` trait.
+///
+/// Required for manipulating page tables in the bootloader
+pub struct PhysicalMemory<'a>(pub &'a mut RangeSet);
+
+impl<'a> PhysMem for PhysicalMemory<'a> {
+    unsafe fn translate(&mut self, paddr: PhysAddr, size: usize)
+            -> Option<*const u8> {
+        unsafe { self.translate_mut(paddr, size).map(|x| x as *const u8) }
+    }
+
+    unsafe fn translate_mut(&mut self, paddr: PhysAddr, size: usize)
+            -> Option<*mut u8> {
+        // Make sure we're not translating zero sized memory
+        assert!(size > 0, "Attempted to translate zero size memory");
+
+        // Convert the physical address into a `usize` which is addressable in
+        // the bootloader
+        let paddr: usize = paddr.0.try_into().ok()?;
+        let _pend: usize = paddr.checked_add(size - 1)?;
+
+        Some(paddr as *mut u8)
+    }
+
+    fn alloc_phys(&mut self, layout: Layout) -> Option<PhysAddr> {
+        Some(PhysAddr(
+            self.0.allocate(layout.size() as u64, layout.align() as u64)
+                .expect("Failed to allocate physical memory")? as u64
+        ))
+    }
+}
 
 /// Initialize the global memory allocator using `memory` as the physical memory
 /// backlog.
 pub fn init(memory: RangeSet) {
     // If the memory has been already initialized, don't reinitialize it
-    if SHARED.free_memory_ref().lock().is_some() { return; }
+    if SHARED.free_memory().lock().is_some() { return; }
 
     // Initialize the memory
-    let mut free_mem = SHARED.free_memory_ref().lock();
+    let mut free_mem = SHARED.free_memory().lock();
     *free_mem = Some(memory);
 }
 
@@ -35,7 +69,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Get access to the physical memory, allocate some bytes and return
         // the pointer
-        let mut phys_mem = SHARED.free_memory_ref().lock();
+        let mut phys_mem = SHARED.free_memory().lock();
         phys_mem.as_mut().and_then(|x| {
             x.allocate(layout.size() as u64, layout.align() as u64).ok()?
         }).unwrap_or(0) as *mut u8
@@ -49,7 +83,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
         // If the pointer was not allocated by [`alloc()`], it can 'free up'
         // 1) ranges that can't be satisfied by the backing physical memory
         // 2) ranges that don't belong to the caller
-        let mut phys_mem = SHARED.free_memory_ref().lock();
+        let mut phys_mem = SHARED.free_memory().lock();
         let ptr = ptr as usize;
         phys_mem.as_mut().and_then(|x| {
             let end = ptr.checked_add(layout.size().checked_sub(1)?)?;

@@ -1,4 +1,4 @@
-//! This is where the embedded kernel image will be present.
+//! This is where the embedded kernel image and trampoline will be present.
 //!
 //! On the first initial boot, the bootloader will use this image as the kernel
 //! image which it will boot. On subsequent soft reboots, it is the kernel's
@@ -10,3 +10,8 @@
 #[unsafe(link_section = ".kernel")]
 pub static INITIAL_KERNEL_IMAGE: &'static [u8] = include_bytes!(
     "../../kernel/target/kernel.bin");
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".trmpln")]
+pub static TRAMPOLINE: &'static [u8] =
+    include_bytes!("../target/trampoline.bin");

@@ -1,5 +1,7 @@
 //! Routines for creating and manipulating 4-level x86_64 page tables
 
+#![no_std]
+
 // The code here adheres to the Intel spec. A large portion of it was taken from
 // Brandon -- it's good and I wouldn't write it any different (apart from the
 // parts which I have indeed rewritten :D).
@@ -7,27 +9,27 @@
 use core::alloc::Layout;
 
 /// Page table flag indicating this page or table is present
-const PAGE_PRESENT: u64 = 1 << 0;
+pub const PAGE_PRESENT: u64 = 1 << 0;
 
 /// Page table flag indicating this page or table is writable
-const PAGE_WRITE: u64 = 1 << 1;
+pub const PAGE_WRITE: u64 = 1 << 1;
 
 /// Page table flag indicating this page or table is accessible by userspace
-const PAGE_USER: u64 = 1 << 2;
+pub const PAGE_USER: u64 = 1 << 2;
 
 /// Page table flag indicating this page entry is a large page
-const PAGE_SIZE: u64 = 1 << 7;
+pub const PAGE_SIZE: u64 = 1 << 7;
 
 /// Page table flag indicating this page or table is not executableu
-const PAGE_NXE: u64 = 1 << 63;
+pub const PAGE_NXE: u64 = 1 << 63;
 
 
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Strongly typed physical address.
 pub struct PhysAddr(pub u64);
 
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A strongly typed virtual address.
 pub struct VirtAddr(pub u64);
@@ -35,7 +37,7 @@ pub struct VirtAddr(pub u64);
 impl VirtAddr {
     /// Returns whether the virtual address is aligned to `page_type`
     pub fn is_aligned(&self, page_type: PageType) -> bool {
-        (self.0 & (!(page_type as u64 - 1))) == 0
+        (self.0 & (!(page_type as u64 - 1))) == self.0
     }
 }
 
@@ -76,6 +78,26 @@ pub trait PhysMem {
     }
 }
 
+#[derive(Debug, Clone)]
+/// Mapping errors
+pub enum Error {
+    /// An invalid page was attempted to be mapped in
+    InvalidPage,
+
+    /// Tried to remap a page
+    MappedAlready,
+
+    /// Attempted to map a larger page over smaller pages
+    SmallerPagesPresent,
+
+    /// Attempted to get page table components of a non-canonical address
+    AddressNotCanonical,
+
+    /// Attempted to map in an unaligned address
+    AddressUnaligned,
+}
+
+#[derive(Debug, Clone)]
 /// A strongly typed structure for paging memory permission bits.
 ///
 /// `read` isn't here because all present pages must be readable
@@ -120,8 +142,9 @@ impl PageType {
     }
 }
 
+#[derive(Debug, Clone)]
 /// Request for a new page table mapping
-pub struct MapRequest<F: Fn(u64) -> u8> {
+pub struct MapRequest {
     /// The Page type of the new entry to be mapped
     pub page_type: PageType,
 
@@ -133,34 +156,22 @@ pub struct MapRequest<F: Fn(u64) -> u8> {
 
     /// The permission bits for the new entry
     pub permissions: Permissions,
-
-    /// The function that will be called on each byte of the new page.
-    /// It will be invoked with the current offset into the mapping and the
-    /// return value will be used to initialize that byte.
-    pub init: Option<F>,
 }
 
-impl<F: Fn(u64) -> u8> MapRequest<F> {
+impl MapRequest {
     /// Creates a new mapping request.
     ///
     /// Returns `None` if the `vaddr` is not aligned to the `page_type`
     pub fn new(vaddr: VirtAddr, page_type: PageType, size: u64,
-               permissions: Permissions) -> Option<Self> {
+               permissions: Permissions) -> Result<Self, Error> {
         vaddr.is_aligned(page_type).then_some(
             Self {
                 page_type,
                 vaddr,
                 size,
                 permissions,
-                init: None::<F>
             }
-        )
-    }
-
-    /// Sets the initialization function for the new memory mapping
-    pub fn set_init(mut self, init_func: F) -> Self {
-        self.init = Some(init_func);
-        self
+        ).ok_or(Error::AddressUnaligned)
     }
 }
 
@@ -176,7 +187,7 @@ pub struct Mapping {
     /// Physical address of the Page Directory entry
     pub pde: Option<PhysAddr>,
 
-    /// Physical address of the Pgae Table entry
+    /// Physical address of the Page Table entry
     pub pte: Option<PhysAddr>,
 
     /// Physical address of the base of the page, offset into the page, and the
@@ -222,6 +233,7 @@ impl Mapping {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 /// A 64-bit x86 page table
 pub struct PageTable {
@@ -241,15 +253,22 @@ impl PageTable {
         Some(PageTable { table })
     }
 
+    /// Returns a `PageTable` struct with the value of CR3 as the table address
+    pub unsafe fn from_cr3() -> Self {
+        let mut cr3 = PhysAddr(0);
+        unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3.0) }
+        Self { table: cr3 }
+    }
+
     #[inline]
     /// Returns the address of the page table
-    pub fn table(&self) -> PhysAddr {
+    pub fn addr(&self) -> PhysAddr {
         self.table
     }
 
     /// Translate a virtual address in this page table into its components.
     pub fn components<P: PhysMem>(&self, phys_mem: &mut P, vaddr: VirtAddr)
-            -> Option<Mapping> {
+            -> Result<Mapping, Error> {
         unsafe {
             (*(self as *const Self as *mut Self))
                 .components_inner(phys_mem, vaddr)
@@ -260,13 +279,15 @@ impl PageTable {
     ///
     /// This is the internal function and shouldn't be used unless necessary.
     /// Use `translate()` instead.
-    pub unsafe fn components_inner<P: PhysMem>(
-            &mut self, phys_mem: &mut P, vaddr: VirtAddr) -> Option<Mapping> {
+    pub unsafe fn components_inner<P: PhysMem>(&mut self, phys_mem: &mut P,
+            vaddr: VirtAddr) -> Result<Mapping, Error> {
         // Start with an empty mapping
         let mut ret = Mapping::default();
 
         // Make sure the address is canonical
-        if cpu::canonicalize_address(16, vaddr.0) != vaddr.0 { return None; }
+        if cpu::canonicalize_address(16, vaddr.0) != vaddr.0 {
+            return Err(Error::AddressNotCanonical);
+        }
 
         // Get the components of the address
         let indices = Mapping::get_indices(vaddr);
@@ -288,7 +309,9 @@ impl PageTable {
             }
 
             // Get a virtual address for this entry
-            let vad = unsafe { phys_mem.translate(ptp, size_of::<u64>())? };
+            let vad = unsafe {
+                phys_mem.translate(ptp, size_of::<u64>()).unwrap()
+            };
             let ent = unsafe { core::ptr::read(vad as *const u64) };
 
             // Check if this page is present
@@ -329,12 +352,27 @@ impl PageTable {
             }
         }
 
-        Some(ret)
+        Ok(ret)
+    }
+
+    /// Create a 4-KiB page table entry within this page table, initializing all
+    /// memory to 0.
+    pub fn map<P: PhysMem>(&mut self, phys_mem: &mut P, request: MapRequest)
+            -> Option<()> {
+        self.map_init(phys_mem, request, None::<fn(u64) -> u8>)
     }
 
     /// Create a 4-KiB page table entry within this page table.
-    pub fn map<F: Fn(u64) -> u8, P: PhysMem>(
-            &mut self, phys_mem: &mut P, request: MapRequest<F>) -> Option<()> {
+    ///
+    /// If `ini` is `Some`, it will be invoked with the current offset into the
+    /// mapping, and the return value from the closure will be used to
+    /// initialize that byte.
+    pub fn map_init<F: Fn(u64) -> u8, P: PhysMem>(
+        &mut self,
+        phys_mem: &mut P,
+        request: MapRequest,
+        init: Option<F>
+    ) -> Option<()> {
         let vaddr = request.vaddr.0;
 
         // Make sure the virtual address is aligned to the page size request
@@ -361,7 +399,7 @@ impl PageTable {
 
             // If there is an initialization function, use it to initialize the
             // memory
-            if let Some(init) = &request.init {
+            if let Some(init) = &init {
                 // Create a slice from this page's physical memory
                 let slice = unsafe {
                     let bytes = phys_mem.translate_mut(page, page_size)?;
@@ -377,7 +415,7 @@ impl PageTable {
             // Add this mapping to the page table
             unsafe {
                 if self.map_raw(phys_mem, VirtAddr(vaddr), request.page_type,
-                                entry).is_none() {
+                                entry).is_err() {
                     // XXX: Failed to map; anything we did will be leaked
                     return None;
                 }
@@ -391,18 +429,18 @@ impl PageTable {
     /// specified by `page_type`
     pub unsafe fn map_raw<P: PhysMem>(
             &mut self, phys_mem: &mut P, vaddr: VirtAddr,
-            page_type: PageType, raw: u64) -> Option<()> {
+            page_type: PageType, raw: u64) -> Result<(), Error> {
         // Non present or large pages without page size bit set are invalid
         if (raw & PAGE_PRESENT) == 0 ||
-                (page_type != PageType::Page4K && (raw & PAGE_SIZE == 0)) {
-            return None;
+                ((page_type != PageType::Page4K) && (raw & PAGE_SIZE == 0)) {
+            return Err(Error::InvalidPage);
         }
 
         // Determine the state of the existing mapping
         let mapping = self.components(phys_mem, vaddr)?;
 
         // Don't re-map pages
-        if mapping.page.is_some() { return None; }
+        if mapping.page.is_some() { return Err(Error::MappedAlready); }
 
         // Get all of the current mapping tables
         let mut entries = [
@@ -420,7 +458,9 @@ impl PageTable {
         };
 
         // Don't map a large page over a table containing smaller pages
-        if entries.get(depth).map_or(false, |x| x.is_some()) { return None; }
+        if entries.get(depth).map_or(false, |x| x.is_some()) {
+            return Err(Error::SmallerPagesPresent);
+        }
 
         // After this point, the mapping _must_ be done
         assert!(mapping.pml4e.is_some());
@@ -429,51 +469,51 @@ impl PageTable {
         let indices = Mapping::get_indices(vaddr);
 
         // Create page tables as needed while walking to the final page
-        for ii in 1..depth {
-            // Check if there is a table along the path
-            if entries[ii].is_none() {
-                // Allocate a new empty table
-                let table = phys_mem.alloc_phys_zeroed(
-                    Layout::from_size_align(4096, 4096).unwrap())?;
+        for idx in 1..depth {
+            // If there is a table mapped in, job is done
+            if entries[idx].is_some() { continue; }
 
-                // Convert the address of the page table entry where we need
-                // to insert the new table
+            // Allocate a new empty table
+            let table = phys_mem.alloc_phys_zeroed(
+                Layout::from_size_align(4096, 4096).unwrap()).unwrap();
+
+            // Convert the address of the page table entry where we need
+            // to insert the new table
+            let ptr = unsafe {
+                phys_mem.translate_mut(entries[idx - 1].unwrap(),
+                                       core::mem::size_of::<u64>()).unwrap()
+            };
+
+            if idx >= 2 {
+                // Get access to the entry with the reference count of the
+                // table we're updating
                 let ptr = unsafe {
-                    phys_mem.translate_mut(entries[ii - 1].unwrap(),
-                                           core::mem::size_of::<u64>())?
+                    phys_mem.translate_mut(entries[idx - 2].unwrap(),
+                                           core::mem::size_of::<u64>())
+                        .unwrap()
                 };
 
-                if ii >= 2 {
-                    // Get access to the entry with the reference count of the
-                    // table we're updating
-                    let ptr = unsafe {
-                        phys_mem.translate_mut(entries[ii - 2].unwrap(),
-                                               core::mem::size_of::<u64>())?
-                    };
+                // Read the entry
+                let nent = unsafe { core::ptr::read(ptr as *const u64) };
 
-                    // Read the entry
-                    let nent = unsafe { core::ptr::read(ptr as *const u64) };
+                // Update the reference count
+                let in_use = (nent >> 52) & 0x3ff;
+                let nent = (nent & !(0x3FF << 52)) | ((in_use + 1) << 52);
 
-                    // Update the reference count
-                    let in_use = (nent >> 52) & 0x3ff;
-                    let nent = (nent & !0x3ff0_0000_0000_0000) |
-                        ((in_use + 1) << 52);
-
-                    // Write in the new entry
-                    unsafe { core::ptr::write(ptr as *mut u64, nent); }
-                }
-
-                // Insert the new table at the entry in the table above us
-                unsafe {
-                    core::ptr::write(ptr as *mut u64,
-                        table.0 | PAGE_USER | PAGE_WRITE | PAGE_PRESENT);
-                }
-
-                // Update the mapping state as we have changed the tables
-                entries[ii] = Some(PhysAddr(
-                    table.0 + indices[ii] * core::mem::size_of::<u64>() as u64
-                ));
+                // Write in the new entry
+                unsafe { core::ptr::write(ptr as *mut u64, nent); }
             }
+
+            // Insert the new table at the entry in the table above us
+            unsafe {
+                core::ptr::write(ptr as *mut u64,
+                    table.0 | PAGE_USER | PAGE_WRITE | PAGE_PRESENT);
+            }
+
+            // Update the mapping state as we have changed the tables
+            entries[idx] = Some(PhysAddr(
+                table.0 + indices[idx] * core::mem::size_of::<u64>() as u64
+            ));
         }
 
         {
@@ -481,7 +521,8 @@ impl PageTable {
             // table we're updating with the new page
             let ptr = unsafe {
                 phys_mem.translate_mut(entries[depth - 2].unwrap(),
-                                       core::mem::size_of::<u64>())?
+                                       core::mem::size_of::<u64>())
+                    .unwrap()
             };
 
             // Read the entry
@@ -489,8 +530,7 @@ impl PageTable {
 
             // Update the reference count
             let in_use = (nent >> 52) & 0x3ff;
-            let nent = (nent & !0x3ff0_0000_0000_0000) |
-                ((in_use + 1) << 52);
+            let nent = (nent & !(0x3FF << 52)) | ((in_use + 1) << 52);
 
             // Write in the new entry
             unsafe { core::ptr::write(ptr as *mut u64, nent); }
@@ -500,10 +540,10 @@ impl PageTable {
         // already exist. Thus, we can write in the mapping!
         unsafe {
             let ptr = phys_mem.translate_mut(entries[depth - 1].unwrap(),
-                core::mem::size_of::<u64>())?;
+                core::mem::size_of::<u64>()).unwrap();
             core::ptr::write(ptr as *mut u64, raw);
         }
 
-        Some(())
+        Ok(())
     }
 }

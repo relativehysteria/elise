@@ -3,6 +3,7 @@
 #![allow(internal_features)]
 #![feature(lang_items)]
 
+use page_table::PhysAddr;
 use core::panic::PanicInfo;
 
 #[lang = "eh_personality"]
@@ -14,6 +15,6 @@ fn panic(_info: &PanicInfo) -> ! {
 }
 
 #[unsafe(export_name="_start")]
-extern "C" fn entry() -> ! {
+extern "C" fn entry(shared: PhysAddr, core_id: u32) -> ! {
     panic!();
 }

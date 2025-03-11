@@ -3,5 +3,19 @@
 version = 4
 
 [[package]]
+name = "cpu"
+version = "0.1.0"
+
+[[package]]
 name = "elf_parser"
 version = "0.1.0"
+dependencies = [
+ "page_table",
+]
+
+[[package]]
+name = "page_table"
+version = "0.1.0"
+dependencies = [
+ "cpu",
+]

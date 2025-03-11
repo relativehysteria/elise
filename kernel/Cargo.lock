@@ -7,11 +7,26 @@ name = "cpu"
 version = "0.1.0"
 
 [[package]]
+name = "elf_parser"
+version = "0.1.0"
+dependencies = [
+ "page_table",
+]
+
+[[package]]
 name = "kernel"
 version = "0.1.0"
 dependencies = [
  "cpu",
+ "page_table",
  "shared_data",
+]
+
+[[package]]
+name = "page_table"
+version = "0.1.0"
+dependencies = [
+ "cpu",
 ]
 
 [[package]]
@@ -29,6 +44,8 @@ dependencies = [
 name = "shared_data"
 version = "0.1.0"
 dependencies = [
+ "elf_parser",
+ "page_table",
  "rangeset",
  "serial",
  "spinlock",

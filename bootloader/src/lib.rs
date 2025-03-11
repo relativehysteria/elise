@@ -7,9 +7,11 @@ pub extern crate alloc;
 pub mod efi;
 pub mod panic;
 pub mod mm;
+pub mod trampoline;
 
-mod kernel_image;
-pub use kernel_image::INITIAL_KERNEL_IMAGE;
+mod embedded;
+pub use embedded::INITIAL_KERNEL_IMAGE;
+pub use embedded::TRAMPOLINE;
 
 /// Data shared between the bootloader and the kernel
 pub static SHARED: shared_data::Shared = shared_data::Shared::new();

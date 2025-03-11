@@ -7,7 +7,7 @@ fn panic(info: &PanicInfo) -> ! {
     // Print the location info
     if let Some(loc) = info.location() {
        print_shatter!("!!! PANIC !!! {} {}:{} ----",
-            loc.file(), loc.column(), loc.line());
+            loc.file(), loc.line(), loc.column());
     }
 
     // Print the message

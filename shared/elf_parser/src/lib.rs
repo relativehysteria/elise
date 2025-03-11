@@ -2,6 +2,8 @@
 
 #![no_std]
 
+use page_table::VirtAddr;
+
 /// Read bytes and little-endian interpret them as a given type
 macro_rules! get_bytes {
     ($bytes:expr, $offset:expr, $type:ty) => {{
@@ -22,9 +24,6 @@ macro_rules! get_bytes_no_err {
         <$type>::from_le_bytes($bytes.get(range)?.try_into().ok()?)
     }}
 }
-
-/// Virtual address type for better readability
-pub type VirtAddr = u64;
 
 /// Virtual size type for better readability
 pub type VirtSize = u64;
@@ -152,7 +151,7 @@ impl<'a> core::iter::Iterator for ElfSegments<'a> {
         let raw_offset = get_bytes_no_err!(bytes, offset + 0x08, u64) as usize;
 
         // Get the virtual address of the segment in memory
-        let vaddr = get_bytes_no_err!(bytes, offset + 0x10, u64);
+        let vaddr = VirtAddr(get_bytes_no_err!(bytes, offset + 0x10, u64));
 
         // Get the size of the segment in file (may be 0)
         let raw_size = get_bytes_no_err!(bytes, offset + 0x20, u64) as usize;
@@ -173,15 +172,15 @@ impl<'a> core::iter::Iterator for ElfSegments<'a> {
         if align_mask != 0xFFF { return Some(Err(Error::WrongAlignment)); }
 
         // Get the aligned virtual address and the offset for this segment
-        let aligned_vaddr = vaddr & (!align_mask);
-        let virtual_offset = vaddr - aligned_vaddr;
+        let aligned_vaddr = vaddr.0 & (!align_mask);
+        let virtual_offset = vaddr.0 - aligned_vaddr;
 
         // Extract raw segment data
         let segment_bytes =
             bytes.get(raw_offset..raw_offset.checked_add(raw_size)?)?;
 
         Some(Ok(Segment {
-            vaddr: aligned_vaddr,
+            vaddr: VirtAddr(aligned_vaddr),
             offset: virtual_offset,
             vsize,
             bytes: segment_bytes,
@@ -248,7 +247,7 @@ impl<'a> Elf<'a> {
         }
 
         // Get the entry point
-        let entry = get_bytes!(bytes, 0x18, u64);
+        let entry = VirtAddr(get_bytes!(bytes, 0x18, u64));
 
         // Get the offset to the start of the program header table
         let ph_offset = get_bytes!(bytes, 0x20, u64) as usize;

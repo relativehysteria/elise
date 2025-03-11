@@ -7,3 +7,5 @@ edition = "2024"
 serial = { path = "../serial" }
 spinlock = { path = "../spinlock" }
 rangeset = { path = "../rangeset" }
+elf_parser = { path = "../elf_parser"}
+page_table = { path = "../page_table" }
