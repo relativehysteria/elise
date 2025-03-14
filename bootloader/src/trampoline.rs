@@ -21,45 +21,41 @@ pub unsafe fn prepare() -> Trampoline {
     let trampoline = crate::TRAMPOLINE;
     let trampoline_virt = VirtAddr(shared_data::TRAMPOLINE_ADDR);
 
-    {
-        // Get exclusive access to physical memory
-        let mut pmem = SHARED.free_memory().lock();
-        let pmem = pmem.as_mut().expect("Memory still uninitialized.");
-        let mut pmem = crate::mm::PhysicalMemory(pmem);
+    // Acquire exclusive access to physical memory
+    let mut pmem = SHARED.free_memory().lock();
+    let pmem = pmem.as_mut().expect("Memory still uninitialized.");
+    let mut pmem = crate::mm::PhysicalMemory(pmem);
 
-        // Build the mapping request for the trampoline
-        let request = MapRequest::new(trampoline_virt,
-            PageType::Page4K, trampoline.len() as u64,
-            Permissions::new(false, true, false)).unwrap();
+    // Build the mapping request for the trampoline
+    let request = MapRequest::new(
+        trampoline_virt,
+        PageType::Page4K,
+        trampoline.len() as u64,
+        Permissions::new(false, true, false)
+    ).expect("Failed to create map request");
 
-        // Create the closure that will be used to initialize the memory bytes
-        let init = |offset| {
-            trampoline.get(offset as usize).copied().unwrap_or(0)
-        };
+    // Create the closure that will be used to initialize the memory bytes
+    let init = |offset| trampoline.get(offset as usize).copied().unwrap_or(0);
 
-        // Get the kernel page table
-        let mut kernel_pt = SHARED.kernel_pt().lock();
-        let kernel_pt = kernel_pt.as_mut()
-            .expect("Kernel page table not initialized");
+    // Map trampoline in kernel page table
+    let mut kernel_pt = SHARED.kernel_pt().lock();
+    let kernel_pt = kernel_pt.as_mut().expect("Kernel table uninitialized");
+    kernel_pt.map_init(&mut pmem, request.clone(), Some(init));
 
-        // // Map in the trampoline
-        kernel_pt.map_init(&mut pmem, request.clone(), Some(init));
+    // Map trampoline in bootloade page table
+    unsafe {
+        // UEFI will likely write protect the page table. Disable for now.
+        let mut cr0: u64;
+        core::arch::asm!("mov {}, cr0", out(reg) cr0);
+        core::arch::asm!("mov cr0, {}", in(reg) (cr0 & !(1 << 16)));
 
-        // Get the bootloader page table and map the trampoline in
-        unsafe {
-            // UEFI will likely write protect the page table. Turn off for now.
-            let mut cr0: u64;
-            core::arch::asm!("mov {}, cr0", out(reg) cr0);
-            core::arch::asm!("mov cr0, {}", in(reg) (cr0 & !(1 << 16)));
+        let mut bootloader_pt = PageTable::from_cr3();
+        bootloader_pt.map_init(&mut pmem, request, Some(init));
 
-            // Map it in
-            let mut bootloader_pt = PageTable::from_cr3();
-            bootloader_pt.map_init(&mut pmem, request.clone(), Some(init));
-
-            // Turn write protection back on
-            core::arch::asm!("mov cr0, {}", in(reg) cr0);
-        }
+        // Re-enable write protection.
+        core::arch::asm!("mov cr0, {}", in(reg) cr0);
     }
-    // Cast the pointer to the copied bytes as a function pointer and return
+
+    // Return the function pointer
     unsafe { core::mem::transmute(trampoline_virt) }
 }

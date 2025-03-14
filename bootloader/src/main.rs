@@ -18,15 +18,10 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     if BOOTLOADER_INITIALIZED.load(Ordering::SeqCst) { return; }
 
     // Initialize the serial driver
-    {
-        let mut serial = SHARED.serial.lock();
-        let driver = unsafe { SerialDriver::init() };
-        *serial = Some(driver);
-    }
-
+    SHARED.serial.lock().replace(unsafe { SerialDriver::init() });
     println!("Initializing the bootloader!");
 
-    // Get the memory map from UEFI
+    // Retrieve UEFI memory map
     let map = unsafe {
         efi::memory_map_exit(system_table, image_handle)
             .expect("Couldn't acquire memory map from UEFI.")
@@ -40,10 +35,7 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
         .store(efi_main as *const u8 as u64, Ordering::SeqCst);
 
     // Save the bootloader page table
-    {
-        let mut boot_pt = SHARED.bootloader_pt().lock();
-        *boot_pt = unsafe { Some(PageTable::from_cr3()) };
-    }
+    SHARED.bootloader_pt().lock().replace(unsafe { PageTable::from_cr3() });
 
     // Validate kernel constants
     shared_data::validate_constants();
@@ -118,9 +110,13 @@ fn load_kernel() {
     let stack_base = VirtAddr(KERNEL_STACK_BASE - KERNEL_STACK_SIZE_PADDED);
 
     // Map the stack into kernel's memory
-    let request = MapRequest::new(stack_base, PageType::Page4K,
+    let request = MapRequest::new(
+        stack_base,
+        PageType::Page4K,
         KERNEL_STACK_SIZE_PADDED,
-        Permissions::new(true, false, false)).unwrap();
+        Permissions::new(true, false, false)
+    ).unwrap();
+
     table.map(&mut pmem, request).unwrap();
 }
 
@@ -130,28 +126,20 @@ unsafe fn jump_to_kernel() -> ! {
     // Map in the trampoline into the bootloader and the kernel page table
     let trampoline = unsafe { bootloader::trampoline::prepare() };
 
-    // Get the kernel entry point
-    let kernel_entry = {
-        let image = SHARED.kernel_image().lock();
-        image.as_ref().unwrap().entry.clone()
-    };
+    // Get the kernel entry point, page table and stack addresses
+    let entry = SHARED.kernel_image().lock().as_ref().unwrap().entry;
+    let table = SHARED.kernel_pt().lock().as_ref().unwrap().addr();
+    let stack = VirtAddr(SHARED.stack_ref().load(Ordering::SeqCst));
 
-    // Get the kernel table address
-    let kernel_table = {
-        let table = SHARED.kernel_pt().lock();
-        table.clone().unwrap()
-    }.addr();
-
-    // Get the kernel stack
-    let kernel_stack = VirtAddr(SHARED.stack_ref().load(Ordering::SeqCst));
-    assert!(kernel_stack.0 == KERNEL_STACK_BASE,
+    // Make sure the stack is at its base
+    assert!(stack.0 == KERNEL_STACK_BASE,
         "Kernel stack base not {:?} for BSP", KERNEL_STACK_BASE);
 
     // Get the physical address to the shared data structure so the kernel can
     // map it in wherever it wants
     let shared = PhysAddr(&SHARED as *const shared_data::Shared as u64);
 
-    unsafe { trampoline(kernel_entry, kernel_stack, kernel_table, shared, 0); }
+    unsafe { trampoline(entry, stack, table, shared, 0); }
 }
 
 #[unsafe(no_mangle)]
