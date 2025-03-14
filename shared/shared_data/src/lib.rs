@@ -3,12 +3,12 @@
 
 #![no_std]
 
+use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;
 use serial::SerialDriver;
 use rangeset::RangeSet;
 use elf_parser::Elf;
 use page_table::{PageTable, VirtAddr};
-use core::sync::atomic::AtomicU64;
 
 /// The base at which the kernel code will be loaded.
 ///
@@ -21,13 +21,10 @@ pub const KERNEL_CODE_BASE: u64 = 0xFFFF_FFFF_CAFE_0000;
 /// The trampoline is a small piece of code that transistions from the
 /// bootloader page table into the kernel page table before jumping to the
 /// kernel.
-pub const TRAMPOLINE_ADDR: u64 = KERNEL_CODE_BASE - 0x38_0000;
+pub const TRAMPOLINE_ADDR: u64 = KERNEL_CODE_BASE - 0x10_0000;
 
-/// The base address to use for the kernel stacks for each core.
-///
-/// This will be the address of the first stack. Other stack addresses will be
-/// __below__ this one.
-pub const KERNEL_STACK_BASE: u64 = KERNEL_CODE_BASE - 0x40_0000;
+/// The base address to use for the kernel stacks for the first core.
+pub const KERNEL_STACK_BASE: u64 = TRAMPOLINE_ADDR - 0x1_0000;
 
 /// Size to allocate for kernel stacks.
 pub const KERNEL_STACK_SIZE: u64 = 128 * 0x1000;
@@ -35,6 +32,9 @@ pub const KERNEL_STACK_SIZE: u64 = 128 * 0x1000;
 /// Padding space to add between kernel stacks to prevent overwrites and such.
 pub const KERNEL_STACK_PAD: u64 = 8 * 0x1000;
 // XXX: Maybe have unmapped guard pages instead of padding?
+
+/// The size of the whole stack together with its padding
+pub const KERNEL_STACK_SIZE_PADDED: u64 = KERNEL_STACK_SIZE + KERNEL_STACK_PAD;
 
 
 /// Makes sure that all constants that are required to be aligned are so
@@ -121,8 +121,8 @@ impl Shared {
         &self.bootloader_entry
     }
 
-    /// Returns a reference to the next available stack virtual address
-    pub fn next_stack(&self) -> &AtomicU64 {
+    /// Returns a reference to the base of the next stack
+    pub fn stack_ref(&self) -> &AtomicU64 {
         &self.next_stack
     }
 }

@@ -64,7 +64,7 @@ pub unsafe fn rdtsc() -> u64 {
 
 #[inline]
 /// Canonicalizes the `addr`, making sure the highest `high_bits` are the same.
-pub fn canonicalize_address(high_bits: usize, addr: u64) -> u64 {
+pub const fn canonicalize_address(high_bits: usize, addr: u64) -> u64 {
     assert!(high_bits < 64);
     (((addr as i64) << high_bits) >> high_bits) as u64
 }

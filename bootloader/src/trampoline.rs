@@ -3,7 +3,7 @@ use crate::SHARED;
 
 /// The trampoline function. This has to be identical to the function specified
 /// in trampoline.asm
-pub type Trampoline = unsafe fn(
+pub type Trampoline = unsafe extern "sysv64" fn(
     kernel_entry: VirtAddr,
     kernel_stack: VirtAddr,
     kernel_table: PhysAddr,
@@ -42,7 +42,7 @@ pub unsafe fn prepare() -> Trampoline {
         let kernel_pt = kernel_pt.as_mut()
             .expect("Kernel page table not initialized");
 
-        // Map in the trampoline
+        // // Map in the trampoline
         kernel_pt.map_init(&mut pmem, request.clone(), Some(init));
 
         // Get the bootloader page table and map the trampoline in
@@ -59,8 +59,6 @@ pub unsafe fn prepare() -> Trampoline {
             // Turn write protection back on
             core::arch::asm!("mov cr0, {}", in(reg) cr0);
         }
-
-
     }
     // Cast the pointer to the copied bytes as a function pointer and return
     unsafe { core::mem::transmute(trampoline_virt) }

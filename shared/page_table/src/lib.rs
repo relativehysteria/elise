@@ -233,8 +233,8 @@ impl Mapping {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(C)]
+#[derive(Debug, Clone, PartialEq)]
+#[repr(transparent)]
 /// A 64-bit x86 page table
 pub struct PageTable {
     /// The physical address of the top-level page table. This is typically the

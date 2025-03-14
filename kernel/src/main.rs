@@ -16,5 +16,5 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[unsafe(export_name="_start")]
 extern "C" fn entry(shared: PhysAddr, core_id: u32) -> ! {
-    panic!();
+    unsafe { cpu::halt(); }
 }

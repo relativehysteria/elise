@@ -1,11 +1,12 @@
 #![no_std]
 #![no_main]
 
+use core::sync::atomic::{Ordering, AtomicBool};
 use bootloader::{efi, mm, SHARED, println};
 use serial::SerialDriver;
 use page_table::{
     VirtAddr, PhysAddr, PageTable, MapRequest, PageType, Permissions};
-use core::sync::atomic::{Ordering, AtomicBool};
+use shared_data::{KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED};
 
 /// Marks the bootloader as one-time initialized
 static BOOTLOADER_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -62,9 +63,8 @@ fn load_kernel() {
         println!("No kernel image found. Using the embedded one from now on.");
 
         // Parse the embedded kernel
-        let elf = elf_parser::Elf::parse(bootloader::INITIAL_KERNEL_IMAGE)
-            .expect("Couldn't parse embedded kernel image.");
-        *kernel = Some(elf);
+        *kernel = Some(elf_parser::Elf::parse(bootloader::INITIAL_KERNEL_IMAGE)
+            .expect("Couldn't parse embedded kernel image."));
     }
 
     // Get exclusive access to physical memory so we can write the kernel
@@ -74,8 +74,10 @@ fn load_kernel() {
     let mut pmem = mm::PhysicalMemory(pmem);
 
     // Create the page table for the kernel
-    let mut table = PageTable::new(&mut pmem)
-        .expect("Failed to create the kernel page table.");
+    let mut kernel_table = SHARED.kernel_pt().lock();
+    *kernel_table = Some(PageTable::new(&mut pmem)
+        .expect("Failed to create the kernel page table."));
+    let table = kernel_table.as_mut().unwrap();
 
     println!("Mapping in the kernel segments.");
 
@@ -109,12 +111,17 @@ fn load_kernel() {
             } else { 0 }
         }));
     }
-
     println!();
 
-    // Save the kernel page table
-    let mut kernel_table = SHARED.kernel_pt().lock();
-    *kernel_table = Some(table);
+    // This is a fresh kernel launch, set the stack back to its base
+    SHARED.stack_ref().store(KERNEL_STACK_BASE, Ordering::SeqCst);
+    let stack_base = VirtAddr(KERNEL_STACK_BASE - KERNEL_STACK_SIZE_PADDED);
+
+    // Map the stack into kernel's memory
+    let request = MapRequest::new(stack_base, PageType::Page4K,
+        KERNEL_STACK_SIZE_PADDED,
+        Permissions::new(true, false, false)).unwrap();
+    table.map(&mut pmem, request).unwrap();
 }
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
@@ -129,40 +136,22 @@ unsafe fn jump_to_kernel() -> ! {
         image.as_ref().unwrap().entry.clone()
     };
 
-    // Get the kernel table
-    let mut kernel_table = {
+    // Get the kernel table address
+    let kernel_table = {
         let table = SHARED.kernel_pt().lock();
-        table.unwrap()
-    };
+        table.clone().unwrap()
+    }.addr();
 
-    // Get a unique stack address for this core
-    let kernel_stack = VirtAddr(SHARED.next_stack().fetch_sub(
-        shared_data::KERNEL_STACK_SIZE + shared_data::KERNEL_STACK_PAD,
-        Ordering::SeqCst));
-
-
-    // Map the kernel stack into kernel's memory
-    {
-        // Get exclusive access to physical memory
-        let mut pmem = SHARED.free_memory().lock();
-        let pmem = pmem.as_mut().expect("Memory still uninitialized.");
-        let mut pmem = crate::mm::PhysicalMemory(pmem);
-
-        // Map it in
-        let request = MapRequest::new(kernel_stack, PageType::Page4K,
-            shared_data::KERNEL_STACK_SIZE,
-            Permissions::new(true, false, false)).unwrap();
-        kernel_table.map(&mut pmem, request).unwrap();
-    }
+    // Get the kernel stack
+    let kernel_stack = VirtAddr(SHARED.stack_ref().load(Ordering::SeqCst));
+    assert!(kernel_stack.0 == KERNEL_STACK_BASE,
+        "Kernel stack base not {:?} for BSP", KERNEL_STACK_BASE);
 
     // Get the physical address to the shared data structure so the kernel can
     // map it in wherever it wants
     let shared = PhysAddr(&SHARED as *const shared_data::Shared as u64);
 
-    println!("entry {:X?} | stack {:X?} | table {:X?} | shared {:X?}",
-        kernel_entry, kernel_stack, kernel_table, shared);
-
-    unsafe { trampoline(kernel_entry, kernel_stack, kernel_table.addr(), shared, 0); }
+    unsafe { trampoline(kernel_entry, kernel_stack, kernel_table, shared, 0); }
 }
 
 #[unsafe(no_mangle)]
