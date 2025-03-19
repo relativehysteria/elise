@@ -16,6 +16,5 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[unsafe(export_name="_start")]
 extern "C" fn entry(core_id: u32) -> ! {
-    // First, we need to map the shared data structure into kernel's memory
     panic!();
 }

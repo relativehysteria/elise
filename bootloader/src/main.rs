@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::sync::atomic::Ordering;
-use bootloader::{efi, mm, trampoline, SHARED, println};
+use bootloader::{efi, mm, trampoline, SHARED, println, print};
 use serial::SerialDriver;
 use page_table::{VirtAddr, PageTable, MapRequest, PageType, Permissions};
 use shared_data::{
@@ -86,8 +86,7 @@ unsafe fn restore_physical_memory() {
     let state = SHARED.get().bootloader().get();
 
     // Restore physical memory
-    *SHARED.get().free_memory().lock() =
-        Some(state.free_memory.clone());
+    *SHARED.get().free_memory().lock() = Some(state.free_memory.clone());
 }
 
 /// Loads the kernel image into memory and prepares its page tables
@@ -166,9 +165,10 @@ fn load_kernel() {
     table.map(&mut pmem, request).unwrap();
 
     // Map in the SHARED data structure
+    print!("Mapping the SHARED structure into kernel memory.\nPages: ");
     let phys_addr = *SHARED.get() as *const Shared as u64;
     for offset in (0..core::mem::size_of::<Shared>()).step_by(0x1000) {
-        println!("PHYS ADDR: {:x?}", phys_addr + offset as u64);
+        print!("0x{:x?} ", phys_addr + offset as u64);
         unsafe {
             table.map_raw(
                 &mut pmem,
@@ -181,6 +181,7 @@ fn load_kernel() {
             ).expect("Couldn't map the SHARED structure into kernel.");
         }
     }
+    println!();
 }
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
