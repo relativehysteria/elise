@@ -11,8 +11,7 @@ global .trampoline
     ;   rdx = table
 
     ; The following arguments are required when jumping to the kernel:
-    ;   rcx = shared_paddr
-    ;   r8  = core_id
+    ;   rcx = core_id
 
     ; Don't interrupt mid change
     cli
@@ -29,8 +28,7 @@ global .trampoline
     ; Set up the _kernel_ arguments before the jump.
     ; The bootloader takes no arguments so if we're jumping to the bootloader,
     ; this doesn't do anything
-    mov rdi, rcx ; shared_paddr
-    mov rsi, r8  ; core_id
+    mov rdi, rcx ; core_id
 
     ; Jump to the entry point
     jmp rax

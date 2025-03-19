@@ -6,10 +6,9 @@ use crate::SHARED;
 /// The trampoline function. This has to be identical to the function specified
 /// in trampoline.asm
 pub type Trampoline = unsafe extern "sysv64" fn(
-    entry:   VirtAddr,
-    stack:   VirtAddr,
-    table:   PhysAddr,
-    paddr:   PhysAddr,
+    entry: VirtAddr,
+    stack: VirtAddr,
+    table: PhysAddr,
     core_id: u32,
 ) -> !;
 

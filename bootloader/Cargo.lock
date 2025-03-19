@@ -59,6 +59,7 @@ version = "0.1.0"
 dependencies = [
  "const_assert",
  "elf_parser",
+ "oncelock",
  "page_table",
  "rangeset",
  "serial",

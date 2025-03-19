@@ -4,10 +4,10 @@
 use core::sync::atomic::Ordering;
 use bootloader::{efi, mm, trampoline, SHARED, println};
 use serial::SerialDriver;
-use page_table::{
-    VirtAddr, PhysAddr, PageTable, MapRequest, PageType, Permissions};
+use page_table::{VirtAddr, PageTable, MapRequest, PageType, Permissions};
 use shared_data::{
-    KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED, BootloaderState, Shared};
+    KERNEL_STACK_BASE, KERNEL_SHARED_BASE, KERNEL_STACK_SIZE_PADDED,
+    BootloaderState, Shared};
 
 
 /// Do some setup on the very first initial boot of the bootloader.
@@ -15,7 +15,7 @@ use shared_data::{
 fn init_setup(image_handle: efi::BootloaderImagePtr,
               system_table: efi::SystemTablePtr) -> bool {
     // If the bootloader has been initialized already, exit
-    if SHARED.initialized() && SHARED.get().bootloader().lock().is_some() {
+    if SHARED.initialized() {
         return true;
     }
 
@@ -67,7 +67,7 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     // Take a snapshot of the bootloader in its current state and mark the
     // bootloader as initialized. This snapshot is what we'll return to when the
     // kernel soft-reboots
-    *SHARED.get().bootloader().lock() = Some(BootloaderState {
+    SHARED.get().bootloader().set(BootloaderState {
         free_memory: memory, page_table, entry, stack
     });
 
@@ -83,11 +83,11 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
 ///   this function is inherently unsafe.
 unsafe fn restore_physical_memory() {
     // Get the bootloader state
-    let state = SHARED.get().bootloader().lock();
+    let state = SHARED.get().bootloader().get();
 
     // Restore physical memory
     *SHARED.get().free_memory().lock() =
-        Some(state.as_ref().unwrap().free_memory.clone());
+        Some(state.free_memory.clone());
 }
 
 /// Loads the kernel image into memory and prepares its page tables
@@ -164,6 +164,23 @@ fn load_kernel() {
         Permissions::new(true, false, false)
     ).unwrap();
     table.map(&mut pmem, request).unwrap();
+
+    // Map in the SHARED data structure
+    let phys_addr = *SHARED.get() as *const Shared as u64;
+    for offset in (0..core::mem::size_of::<Shared>()).step_by(0x1000) {
+        println!("PHYS ADDR: {:x?}", phys_addr + offset as u64);
+        unsafe {
+            table.map_raw(
+                &mut pmem,
+                VirtAddr(KERNEL_SHARED_BASE + offset as u64),
+                PageType::Page4K,
+                (phys_addr + offset as u64)
+                    | page_table::PAGE_PRESENT
+                    | page_table::PAGE_WRITE
+                    | page_table::PAGE_NXE
+            ).expect("Couldn't map the SHARED structure into kernel.");
+        }
+    }
 }
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
@@ -181,18 +198,13 @@ unsafe fn jump_to_kernel() {
     assert!(stack.0 == KERNEL_STACK_BASE,
         "Kernel stack base not {:?} for BSP", KERNEL_STACK_BASE);
 
-    // Get the physical address to the shared data structure so the kernel can
-    // map it in wherever it wants
-    let shared = PhysAddr(*SHARED.get() as *const Shared as u64);
-
     println!("────────────────────────────────────────────────────────────");
     println!("Jumping into kernel!");
     println!(" ├ entry:  {:X?}", entry);
     println!(" ├ stack:  {:X?}", stack);
-    println!(" ├ table:  {:X?}", table);
-    println!(" └ shared: {:X?}", shared);
+    println!(" └ table:  {:X?}", table);
 
-    unsafe { trampoline(entry, stack, table, shared, 0); }
+    unsafe { trampoline(entry, stack, table, 0); }
 }
 
 #[unsafe(no_mangle)]

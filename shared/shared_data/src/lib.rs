@@ -5,6 +5,7 @@
 
 use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;
+use oncelock::OnceLock;
 use serial::SerialDriver;
 use rangeset::RangeSet;
 use elf_parser::Elf;
@@ -22,13 +23,16 @@ macro_rules! is_4k_aligned {
 /// This is the value in kernel/.cargo/config.toml
 pub const KERNEL_CODE_BASE: u64 = 0xFFFF_FFFF_CAFE_0000;
 
+/// The base at which the SHARED data structure will be loaded
+pub const KERNEL_SHARED_BASE: u64 = KERNEL_CODE_BASE - 0x1_0000;
+
 /// The base address to use for the trampoline code that is present both in the
 /// bootloader and in the kernel page tables.
 ///
 /// The trampoline is a small piece of code that transistions from the
 /// bootloader page table into the kernel page table before jumping to the
 /// kernel.
-pub const TRAMPOLINE_ADDR: u64 = KERNEL_CODE_BASE - 0x10_0000;
+pub const TRAMPOLINE_ADDR: u64 = KERNEL_SHARED_BASE - 0x1_0000;
 
 /// The base address to use for the kernel stacks for the first core.
 pub const KERNEL_STACK_BASE: u64 = TRAMPOLINE_ADDR - 0x1_0000;
@@ -45,6 +49,7 @@ pub const KERNEL_STACK_SIZE_PADDED: u64 = KERNEL_STACK_SIZE + KERNEL_STACK_PAD;
 
 // Validate all of the constants
 is_4k_aligned!(KERNEL_CODE_BASE);
+is_4k_aligned!(KERNEL_SHARED_BASE);
 is_4k_aligned!(TRAMPOLINE_ADDR);
 is_4k_aligned!(KERNEL_STACK_BASE);
 is_4k_aligned!(KERNEL_STACK_SIZE_PADDED);
@@ -99,8 +104,9 @@ pub struct Shared {
     /// The virtual address of the next available stack.
     next_stack: AtomicU64,
 
-    /// Information about the state of the bootloader.
-    bootloader: SpinLock<Option<BootloaderState>>,
+    /// A snapshot of the bootloader after the bootloader has been initialized
+    /// to its permanent state.
+    bootloader: OnceLock<BootloaderState>,
 }
 
 impl Shared {
@@ -112,7 +118,7 @@ impl Shared {
             kernel_image: SpinLock::new(None),
             kernel_pt:    SpinLock::new(None),
             next_stack:   AtomicU64::new(KERNEL_STACK_BASE),
-            bootloader:   SpinLock::new(None),
+            bootloader:   OnceLock::new(),
         }
     }
 
@@ -131,8 +137,8 @@ impl Shared {
         &self.kernel_pt
     }
 
-    /// Returns a reference to the bootloader page table
-    pub fn bootloader(&self) -> &SpinLock<Option<BootloaderState>> {
+    /// Returns a reference to the bootloader snapshot
+    pub fn bootloader(&self) -> &OnceLock<BootloaderState> {
         &self.bootloader
     }
 
