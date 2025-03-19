@@ -21,7 +21,8 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
 
     // Initialize the serial driver
     let mut serial = unsafe { SerialDriver::init() };
-    serial.write("Initializing the bootloader!\n".as_bytes());
+    serial.write("─────────────────────────────┐\n".as_bytes());
+    serial.write("Initializing the bootloader! │\n\n".as_bytes());
 
     // Retrieve the UEFI memory map
     let mut map = unsafe {
@@ -116,6 +117,7 @@ fn load_kernel() {
         .expect("Failed to create the kernel page table."));
     let table = kernel_table.as_mut().unwrap();
 
+    println!("────────────────────────────────────────────────────────────");
     println!("Mapping in the kernel segments.");
 
     // Map in the kernel to where it expects
@@ -183,6 +185,7 @@ unsafe fn jump_to_kernel() {
     // map it in wherever it wants
     let shared = PhysAddr(*SHARED.get() as *const Shared as u64);
 
+    println!("────────────────────────────────────────────────────────────");
     println!("Jumping into kernel!");
     println!(" ├ entry:  {:X?}", entry);
     println!(" ├ stack:  {:X?}", stack);
