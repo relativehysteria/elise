@@ -1,24 +1,24 @@
 #![no_std]
 #![no_main]
 
-use core::sync::atomic::{Ordering, AtomicBool};
-use bootloader::{efi, mm, SHARED, println};
+use core::sync::atomic::Ordering;
+use bootloader::{efi, mm, trampoline, SHARED, println};
 use serial::SerialDriver;
 use page_table::{
     VirtAddr, PhysAddr, PageTable, MapRequest, PageType, Permissions};
-use shared_data::{KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED};
+use shared_data::{KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED, BootloaderState};
 
-/// Marks the bootloader as one-time initialized
-static BOOTLOADER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-/// Do some setup on the very first initial boot of the bootloader
+/// Do some setup on the very first initial boot of the bootloader.
+/// Returns `true` if the kernel was already set up.
 fn init_setup(image_handle: efi::BootloaderImagePtr,
-              system_table: efi::SystemTablePtr) {
+              system_table: efi::SystemTablePtr) -> bool {
     // If the bootloader has been initialized already, exit
-    if BOOTLOADER_INITIALIZED.load(Ordering::SeqCst) { return; }
+    if SHARED.bootloader().lock().is_some() { return true; }
 
     // Initialize the serial driver
     SHARED.serial.lock().replace(unsafe { SerialDriver::init() });
+
     println!("Initializing the bootloader!");
 
     // Retrieve UEFI memory map
@@ -30,21 +30,46 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     // Initialize the memory manager
     mm::init(map);
 
-    // Save the bootloader entry point
-    SHARED.bootloader_entry()
-        .store(efi_main as *const u8 as u64, Ordering::SeqCst);
+    // Map in the trampoline into the bootloader memory space
+    trampoline::map_once();
 
-    // Save the bootloader page table
-    SHARED.bootloader_pt().lock().replace(unsafe { PageTable::from_cr3() });
+    // Get the bootloader memory snapshot, page table, entry point and stack
+    let free_memory = SHARED.free_memory().lock().as_ref().unwrap().clone();
+    let page_table = unsafe { PageTable::from_cr3() };
+    let entry = VirtAddr(efi_main as *const u8 as u64);
+    let stack = VirtAddr(unsafe {
+        let stack: u64;
+        core::arch::asm!("mov {}, rsp", out(reg) stack);
+        stack
+    });
 
-    // Validate kernel constants
-    shared_data::validate_constants();
+    // Take a snapshot of the bootloader in its current state and mark the
+    // bootloader as initialized. This snapshot is what we'll return to when the
+    // kernel soft-reboots
+    *SHARED.bootloader().lock() = Some(BootloaderState {
+        free_memory, page_table, entry, stack
+    });
 
-    // Mark the bootloader as initialized
-    BOOTLOADER_INITIALIZED.store(true, Ordering::SeqCst);
+    false
 }
 
-/// Loads the kernel image into memory and prepares its page table
+/// Restores the physical memory to the snapshot taken during initialization.
+///
+/// # SAFETY
+/// * It must be called _after_ bootloader initialization.
+/// * Any memory allocated _after_ initialization will be freed, meaning any
+///   virtual mappings made after initialization will become invalid and as such
+///   this function is inherently unsafe.
+unsafe fn restore_physical_memory() {
+    // Get the bootloader state
+    let state = SHARED.bootloader().lock();
+
+    // Restore physical memory
+    *SHARED.free_memory().lock() =
+        Some(state.as_ref().unwrap().free_memory.clone());
+}
+
+/// Loads the kernel image into memory and prepares its page tables
 fn load_kernel() {
     println!("Loading the kernel image!");
 
@@ -116,15 +141,14 @@ fn load_kernel() {
         KERNEL_STACK_SIZE_PADDED,
         Permissions::new(true, false, false)
     ).unwrap();
-
     table.map(&mut pmem, request).unwrap();
 }
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
 /// jumps to the kernel!
-unsafe fn jump_to_kernel() -> ! {
-    // Map in the trampoline into the bootloader and the kernel page table
-    let trampoline = unsafe { bootloader::trampoline::prepare() };
+unsafe fn jump_to_kernel() {
+    // Map in the trampoline in the kernel page table and get a pointer to it
+    let trampoline = unsafe { bootloader::trampoline::prepare().unwrap() };
 
     // Get the kernel entry point, page table and stack addresses
     let entry = SHARED.kernel_image().lock().as_ref().unwrap().entry;
@@ -143,10 +167,17 @@ unsafe fn jump_to_kernel() -> ! {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
+unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
                        system_table: efi::SystemTablePtr) {
-    // One time bootloader initialization
-    init_setup(image_handle, system_table);
+    // One time bootloader initialization. If the bootloader was set up already,
+    // restore to physical memory to the snapshot we took on initialization
+    if init_setup(image_handle, system_table) {
+        unsafe { restore_physical_memory(); }
+    }
+
+    // From now on, due to `restore_physical_memory()`, all bootloader virtual
+    // mappings are locked in and no more must be done. We are still free to
+    // use physical memory when doing kernel mappings and such.
 
     // Load the kernel image into memory
     load_kernel();

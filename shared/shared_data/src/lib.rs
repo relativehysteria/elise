@@ -10,6 +10,13 @@ use rangeset::RangeSet;
 use elf_parser::Elf;
 use page_table::{PageTable, VirtAddr};
 
+/// Macro that checks whether a value is 4K aligned at compile time
+macro_rules! is_4k_aligned {
+    ($x:expr) => {
+        const_assert::const_assert!(($x & (!(4096 - 1))) == $x);
+    }
+}
+
 /// The base at which the kernel code will be loaded.
 ///
 /// This is the value in kernel/.cargo/config.toml
@@ -36,15 +43,32 @@ pub const KERNEL_STACK_PAD: u64 = 8 * 0x1000;
 /// The size of the whole stack together with its padding
 pub const KERNEL_STACK_SIZE_PADDED: u64 = KERNEL_STACK_SIZE + KERNEL_STACK_PAD;
 
+// Validate all of the constants
+is_4k_aligned!(KERNEL_CODE_BASE);
+is_4k_aligned!(TRAMPOLINE_ADDR);
+is_4k_aligned!(KERNEL_STACK_BASE);
+is_4k_aligned!(KERNEL_STACK_SIZE_PADDED);
 
-/// Makes sure that all constants that are required to be aligned are so
-pub fn validate_constants() {
-    let p = page_table::PageType::Page4K;
-    assert!(VirtAddr(KERNEL_CODE_BASE).is_aligned(p));
-    assert!(VirtAddr(TRAMPOLINE_ADDR).is_aligned(p));
-    assert!(VirtAddr(KERNEL_STACK_BASE).is_aligned(p));
-    assert!(VirtAddr(KERNEL_STACK_SIZE.checked_sub(KERNEL_STACK_PAD).unwrap())
-        .is_aligned(p))
+#[derive(Debug, Clone)]
+/// Information about the state of the bootloader. All virtual addresses are
+/// only valid within the bootloader page table.
+///
+/// This struct is a state snapshot _after_ the trampoline has been mapped in,
+/// but _before_ the kernel was mapped in. This allows us to restore the
+/// bootloader physical memory and its virtual mappings to a sane state before
+/// mapping in the kernel and jumping to it again.
+pub struct BootloaderState {
+    /// The bootloader page table
+    pub page_table: PageTable,
+
+    /// Entry point to the bootloader
+    pub entry: VirtAddr,
+
+    /// Virtual address of the bootloader stack
+    pub stack: VirtAddr,
+
+    /// The physical memory map state
+    pub free_memory: RangeSet,
 }
 
 /// Data structure shared between the kernel and the bootloader
@@ -75,24 +99,20 @@ pub struct Shared {
     /// The virtual address of the next available stack.
     next_stack: AtomicU64,
 
-    /// Entry point of the bootloader (0 means uninitialized)
-    bootloader_entry: AtomicU64,
-
-    /// The page table used for the bootloader
-    bootloader_pt: SpinLock<Option<PageTable>>,
+    /// Information about the state of the bootloader.
+    bootloader: SpinLock<Option<BootloaderState>>,
 }
 
 impl Shared {
     /// Creates an empty structure for shared data
     pub const fn new() -> Self {
         Self {
-            serial:           SpinLock::new(None),
-            free_memory:      SpinLock::new(None),
-            kernel_image:     SpinLock::new(None),
-            kernel_pt:        SpinLock::new(None),
-            next_stack:       AtomicU64::new(KERNEL_STACK_BASE),
-            bootloader_entry: AtomicU64::new(0),
-            bootloader_pt:    SpinLock::new(None),
+            serial:       SpinLock::new(None),
+            free_memory:  SpinLock::new(None),
+            kernel_image: SpinLock::new(None),
+            kernel_pt:    SpinLock::new(None),
+            next_stack:   AtomicU64::new(KERNEL_STACK_BASE),
+            bootloader:   SpinLock::new(None),
         }
     }
 
@@ -112,13 +132,8 @@ impl Shared {
     }
 
     /// Returns a reference to the bootloader page table
-    pub fn bootloader_pt(&self) -> &SpinLock<Option<PageTable>> {
-        &self.bootloader_pt
-    }
-
-    /// Returns a reference to the bootloader entry point address
-    pub fn bootloader_entry(&self) -> &AtomicU64 {
-        &self.bootloader_entry
+    pub fn bootloader(&self) -> &SpinLock<Option<BootloaderState>> {
+        &self.bootloader
     }
 
     /// Returns a reference to the base of the next stack

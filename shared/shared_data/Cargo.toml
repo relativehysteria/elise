@@ -9,3 +9,4 @@ spinlock = { path = "../spinlock" }
 rangeset = { path = "../rangeset" }
 elf_parser = { path = "../elf_parser"}
 page_table = { path = "../page_table" }
+const_assert = { path = "../const_assert" }

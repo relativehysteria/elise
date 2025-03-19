@@ -5,27 +5,32 @@
 
 global .trampoline
 .trampoline:
-    ; rdi = kernel_entry
-    ; rsi = kernel_stack
-    ; rdx = kernel_table
-    ; rcx = shared_paddr
-    ; r8  = core_id
+    ; The following arguments are required for the trampoline:
+    ;   rdi = entry
+    ;   rsi = stack
+    ;   rdx = table
+
+    ; The following arguments are required when jumping to the kernel:
+    ;   rcx = shared_paddr
+    ;   r8  = core_id
 
     ; Don't interrupt mid change
     cli
 
-    ; Set up the new stack for this core
+    ; Set up the stack for this core
     mov rsp, rsi
 
-    ; Switch to the kernel page table
+    ; Switch to the specified page table
     mov cr3, rdx
 
-    ; Save the kernel entry point before we jump to it
+    ; Save the entry point before we jump to it
     mov rax, rdi
 
-    ; Set up the kernel arguments before the jump
+    ; Set up the _kernel_ arguments before the jump.
+    ; The bootloader takes no arguments so if we're jumping to the bootloader,
+    ; this doesn't do anything
     mov rdi, rcx ; shared_paddr
     mov rsi, r8  ; core_id
 
-    ; Jump to the kernel
+    ; Jump to the entry point
     jmp rax

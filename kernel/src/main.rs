@@ -3,8 +3,8 @@
 #![allow(internal_features)]
 #![feature(lang_items)]
 
-use page_table::PhysAddr;
 use core::panic::PanicInfo;
+use page_table::PhysAddr;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}
@@ -16,5 +16,6 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[unsafe(export_name="_start")]
 extern "C" fn entry(shared: PhysAddr, core_id: u32) -> ! {
-    unsafe { cpu::halt(); }
+    // First, we need to map the shared data structure into kernel's memory
+    panic!();
 }

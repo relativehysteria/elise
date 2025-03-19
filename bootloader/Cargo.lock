@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "const_assert"
+version = "0.1.0"
+
+[[package]]
 name = "cpu"
 version = "0.1.0"
 
@@ -48,6 +52,7 @@ dependencies = [
 name = "shared_data"
 version = "0.1.0"
 dependencies = [
+ "const_assert",
  "elf_parser",
  "page_table",
  "rangeset",
