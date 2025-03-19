@@ -43,7 +43,7 @@ pub fn map_once() {
     let init = |offset| trampoline.get(offset as usize).copied().unwrap_or(0);
 
     // Acquire exclusive access to physical memory
-    let mut pmem = SHARED.free_memory().lock();
+    let mut pmem = SHARED.get().free_memory().lock();
     let pmem = pmem.as_mut().expect("Memory still uninitialized.");
     let mut pmem = crate::mm::PhysicalMemory(pmem);
 
@@ -82,12 +82,12 @@ pub unsafe fn prepare() -> Option<Trampoline> {
     if trampoline_raw == 0 { return None; }
 
     // Acquire exclusive access to physical memory
-    let mut pmem = SHARED.free_memory().lock();
+    let mut pmem = SHARED.get().free_memory().lock();
     let pmem = pmem.as_mut().expect("Memory still uninitialized.");
     let mut pmem = crate::mm::PhysicalMemory(pmem);
 
     // Map in the raw trampoline page entry in the kernel page table
-    let mut table = SHARED.kernel_pt().lock();
+    let mut table = SHARED.get().kernel_pt().lock();
     let table = table.as_mut().expect("Kernel table uninitialized");
 
     unsafe {

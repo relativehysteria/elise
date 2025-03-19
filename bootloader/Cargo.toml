@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared_data = { path = "../shared/shared_data" }
 cpu = { path = "../shared/cpu" }
 serial = { path = "../shared/serial" }
 spinlock = { path = "../shared/spinlock" }
+oncelock = { path = "../shared/oncelock" }
 rangeset = { path = "../shared/rangeset" }
 page_table = { path = "../shared/page_table" }
 elf_parser = { path = "../shared/elf_parser" }
+shared_data = { path = "../shared/shared_data" }

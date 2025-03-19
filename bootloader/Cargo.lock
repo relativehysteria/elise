@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "cpu",
  "elf_parser",
+ "oncelock",
  "page_table",
  "rangeset",
  "serial",
@@ -29,6 +30,10 @@ version = "0.1.0"
 dependencies = [
  "page_table",
 ]
+
+[[package]]
+name = "oncelock"
+version = "0.1.0"
 
 [[package]]
 name = "page_table"

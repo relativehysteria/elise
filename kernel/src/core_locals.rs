@@ -15,6 +15,14 @@ pub struct CoreLocals {
     pub shared: &'static shared_data::Shared,
 }
 
+///
+fn map_shared_data(shared: PhysAddr) {
+}
+
 /// Initialize the core locals for this core
 pub fn init(shared: PhysAddr, core_id: u32) {
+    // First of all, map the shared data into the kernel
+    if core_id == 0 {
+        map_shared_data(shared);
+    }
 }

@@ -6,7 +6,8 @@ use bootloader::{efi, mm, trampoline, SHARED, println};
 use serial::SerialDriver;
 use page_table::{
     VirtAddr, PhysAddr, PageTable, MapRequest, PageType, Permissions};
-use shared_data::{KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED, BootloaderState};
+use shared_data::{
+    KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED, BootloaderState, Shared};
 
 
 /// Do some setup on the very first initial boot of the bootloader.
@@ -14,18 +15,37 @@ use shared_data::{KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED, BootloaderState};
 fn init_setup(image_handle: efi::BootloaderImagePtr,
               system_table: efi::SystemTablePtr) -> bool {
     // If the bootloader has been initialized already, exit
-    if SHARED.bootloader().lock().is_some() { return true; }
+    if SHARED.initialized() && SHARED.get().bootloader().lock().is_some() {
+        return true;
+    }
 
     // Initialize the serial driver
-    SHARED.serial.lock().replace(unsafe { SerialDriver::init() });
+    let mut serial = unsafe { SerialDriver::init() };
+    serial.write("Initializing the bootloader!\n".as_bytes());
 
-    println!("Initializing the bootloader!");
-
-    // Retrieve UEFI memory map
-    let map = unsafe {
+    // Retrieve the UEFI memory map
+    let mut map = unsafe {
         efi::memory_map_exit(system_table, image_handle)
             .expect("Couldn't acquire memory map from UEFI.")
     };
+
+    // Allocate the SHARED data structure. Because UEFI sets up the page tables
+    // to be unit mapped, the address here is both physical and virtual
+    use page_table::PhysMem;
+    let mut pmem = mm::PhysicalMemory(&mut map);
+    let shared_addr = pmem.alloc_phys_zeroed(
+        core::alloc::Layout::from_size_align(
+            core::mem::size_of::<Shared>(),
+            4096).unwrap()
+        ).unwrap();
+
+    // Initialize the SHARED struct and save it as global!
+    let shared_ptr: *mut Shared = shared_addr.0 as *mut Shared;
+    unsafe { shared_ptr.write(Shared::new()); }
+    SHARED.set(unsafe { &*shared_ptr });
+
+    // Save the serial driver
+    *SHARED.get().serial.lock() = Some(serial);
 
     // Initialize the memory manager
     mm::init(map);
@@ -34,7 +54,7 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     trampoline::map_once();
 
     // Get the bootloader memory snapshot, page table, entry point and stack
-    let free_memory = SHARED.free_memory().lock().as_ref().unwrap().clone();
+    let memory = SHARED.get().free_memory().lock().as_ref().unwrap().clone();
     let page_table = unsafe { PageTable::from_cr3() };
     let entry = VirtAddr(efi_main as *const u8 as u64);
     let stack = VirtAddr(unsafe {
@@ -46,8 +66,8 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     // Take a snapshot of the bootloader in its current state and mark the
     // bootloader as initialized. This snapshot is what we'll return to when the
     // kernel soft-reboots
-    *SHARED.bootloader().lock() = Some(BootloaderState {
-        free_memory, page_table, entry, stack
+    *SHARED.get().bootloader().lock() = Some(BootloaderState {
+        free_memory: memory, page_table, entry, stack
     });
 
     false
@@ -62,10 +82,10 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
 ///   this function is inherently unsafe.
 unsafe fn restore_physical_memory() {
     // Get the bootloader state
-    let state = SHARED.bootloader().lock();
+    let state = SHARED.get().bootloader().lock();
 
     // Restore physical memory
-    *SHARED.free_memory().lock() =
+    *SHARED.get().free_memory().lock() =
         Some(state.as_ref().unwrap().free_memory.clone());
 }
 
@@ -75,7 +95,7 @@ fn load_kernel() {
 
     // If there wasn't a kernel image loaded yet, this is the inital boot. Set
     // it to the embedded kernel image
-    let mut kernel = SHARED.kernel_image().lock();
+    let mut kernel = SHARED.get().kernel_image().lock();
     if kernel.is_none() {
         println!("No kernel image found. Using the embedded one from now on.");
 
@@ -86,12 +106,12 @@ fn load_kernel() {
 
     // Get exclusive access to physical memory so we can write the kernel
     // to where it wants
-    let mut pmem = SHARED.free_memory().lock();
+    let mut pmem = SHARED.get().free_memory().lock();
     let pmem = pmem.as_mut().expect("Memory not still uninitialized.");
     let mut pmem = mm::PhysicalMemory(pmem);
 
     // Create the page table for the kernel
-    let mut kernel_table = SHARED.kernel_pt().lock();
+    let mut kernel_table = SHARED.get().kernel_pt().lock();
     *kernel_table = Some(PageTable::new(&mut pmem)
         .expect("Failed to create the kernel page table."));
     let table = kernel_table.as_mut().unwrap();
@@ -131,7 +151,7 @@ fn load_kernel() {
     println!();
 
     // This is a fresh kernel launch, set the stack back to its base
-    SHARED.stack_ref().store(KERNEL_STACK_BASE, Ordering::SeqCst);
+    SHARED.get().stack_ref().store(KERNEL_STACK_BASE, Ordering::SeqCst);
     let stack_base = VirtAddr(KERNEL_STACK_BASE - KERNEL_STACK_SIZE_PADDED);
 
     // Map the stack into kernel's memory
@@ -151,9 +171,9 @@ unsafe fn jump_to_kernel() {
     let trampoline = unsafe { bootloader::trampoline::prepare().unwrap() };
 
     // Get the kernel entry point, page table and stack addresses
-    let entry = SHARED.kernel_image().lock().as_ref().unwrap().entry;
-    let table = SHARED.kernel_pt().lock().as_ref().unwrap().addr();
-    let stack = VirtAddr(SHARED.stack_ref().load(Ordering::SeqCst));
+    let entry = SHARED.get().kernel_image().lock().as_ref().unwrap().entry;
+    let table = SHARED.get().kernel_pt().lock().as_ref().unwrap().addr();
+    let stack = VirtAddr(SHARED.get().stack_ref().load(Ordering::SeqCst));
 
     // Make sure the stack is at its base
     assert!(stack.0 == KERNEL_STACK_BASE,
@@ -161,7 +181,13 @@ unsafe fn jump_to_kernel() {
 
     // Get the physical address to the shared data structure so the kernel can
     // map it in wherever it wants
-    let shared = PhysAddr(&SHARED as *const shared_data::Shared as u64);
+    let shared = PhysAddr(*SHARED.get() as *const Shared as u64);
+
+    println!("Jumping into kernel!");
+    println!(" ├ entry:  {:X?}", entry);
+    println!(" ├ stack:  {:X?}", stack);
+    println!(" ├ table:  {:X?}", table);
+    println!(" └ shared: {:X?}", shared);
 
     unsafe { trampoline(entry, stack, table, shared, 0); }
 }
