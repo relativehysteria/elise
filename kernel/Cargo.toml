@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 shared_data = { path = "../shared/shared_data" }
 page_table = { path = "../shared/page_table" }
+oncelock = { path = "../shared/oncelock" }
 cpu = { path = "../shared/cpu" }

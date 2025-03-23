@@ -2,6 +2,7 @@
 /// macro.
 
 use page_table::{VirtAddr, PhysAddr};
+use crate::SHARED;
 
 #[derive(Debug, Clone)]
 pub struct CoreLocals {
@@ -10,19 +11,7 @@ pub struct CoreLocals {
 
     /// A unique identifier allocated for this core
     pub id: u32,
-
-    /// A reference to the data shared between the bootloader and the kernel
-    pub shared: &'static shared_data::Shared,
-}
-
-///
-fn map_shared_data(shared: PhysAddr) {
 }
 
 /// Initialize the core locals for this core
-pub fn init(shared: PhysAddr, core_id: u32) {
-    // First of all, map the shared data into the kernel
-    if core_id == 0 {
-        map_shared_data(shared);
-    }
-}
+pub fn init(core_id: u32) {}

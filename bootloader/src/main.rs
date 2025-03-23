@@ -4,7 +4,9 @@
 use core::sync::atomic::Ordering;
 use bootloader::{efi, mm, trampoline, SHARED, println, print};
 use serial::SerialDriver;
-use page_table::{VirtAddr, PageTable, MapRequest, PageType, Permissions};
+use page_table::{
+    VirtAddr, PageTable, MapRequest, PageType, Permissions,
+    PAGE_PRESENT, PAGE_WRITE, PAGE_NXE};
 use shared_data::{
     KERNEL_STACK_BASE, KERNEL_SHARED_BASE, KERNEL_STACK_SIZE_PADDED,
     BootloaderState, Shared};
@@ -152,7 +154,7 @@ fn load_kernel() {
     println!();
 
     // This is a fresh kernel launch, set the stack back to its base
-    SHARED.get().stack_ref().store(KERNEL_STACK_BASE, Ordering::SeqCst);
+    SHARED.get().stack().store(KERNEL_STACK_BASE, Ordering::SeqCst);
     let stack_base = VirtAddr(KERNEL_STACK_BASE - KERNEL_STACK_SIZE_PADDED);
 
     // Map the stack into kernel's memory
@@ -175,9 +177,7 @@ fn load_kernel() {
                 VirtAddr(KERNEL_SHARED_BASE + offset as u64),
                 PageType::Page4K,
                 (phys_addr + offset as u64)
-                    | page_table::PAGE_PRESENT
-                    | page_table::PAGE_WRITE
-                    | page_table::PAGE_NXE
+                    | PAGE_PRESENT | PAGE_WRITE | PAGE_NXE
             ).expect("Couldn't map the SHARED structure into kernel.");
         }
     }
@@ -193,7 +193,7 @@ unsafe fn jump_to_kernel() {
     // Get the kernel entry point, page table and stack addresses
     let entry = SHARED.get().kernel_image().lock().as_ref().unwrap().entry;
     let table = SHARED.get().kernel_pt().lock().as_ref().unwrap().addr();
-    let stack = VirtAddr(SHARED.get().stack_ref().load(Ordering::SeqCst));
+    let stack = VirtAddr(SHARED.get().stack().load(Ordering::SeqCst));
 
     // Make sure the stack is at its base
     assert!(stack.0 == KERNEL_STACK_BASE,

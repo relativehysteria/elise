@@ -17,6 +17,10 @@ pub const PAGE_WRITE: u64 = 1 << 1;
 /// Page table flag indicating this page or table is accessible by userspace
 pub const PAGE_USER: u64 = 1 << 2;
 
+/// Page table flag indicating that accesses to memory described by this page or
+/// table should be uncached
+pub const PAGE_CACHE_DISABLE: u64 = 1 << 4;
+
 /// Page table flag indicating this page entry is a large page
 pub const PAGE_SIZE: u64 = 1 << 7;
 
@@ -98,31 +102,48 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone)]
-/// A strongly typed structure for paging memory permission bits.
+/// Paging memory access permissions.
 ///
-/// `read` isn't here because all present pages must be readable
+/// This struct defines the access rights for a memory page.
+///
+/// Note: The `read` permission is not included because all present pages are
+/// implicitly readable.
 pub struct Permissions {
-    /// Marks the memory as writable
+    /// Allows write access to the memory page
     pub write: bool,
 
-    /// Marks the memory as executable
+    /// Allows execution of instructions from the memory page
     pub execute: bool,
 
-    /// Marks the memory as accessible by the userspace
+    /// Allows access to the memory page from user mode
     pub user: bool,
+
+    /// Disables caching for the memory page
+    pub cache: bool,
 }
 
 impl Permissions {
-    /// Creates a new permission struct given arguments
+    /// Returns a new instance with the specified access rights.
+    ///
+    /// The page will be assumed to be cached by default.
     pub fn new(write: bool, execute: bool, user: bool) -> Self {
-        Self { write, execute, user }
+        Self { write, execute, user, cache: false }
     }
 
-    /// Returns the bit mask of this permission struct
+    /// Returns a new instance with the specified access rights,
+    /// ensuring the page is uncached
+    pub fn uncached(write: bool, execute: bool, user: bool) -> Self {
+        Self { write, execute, user, cache: true }
+    }
+
+    /// Computes the corresponding bitmask for the current permission set.
+    ///
+    /// This bitmask can be used to configure hardware page tables.
     fn bits(&self) -> u64 {
         0 | if self.write   { PAGE_WRITE } else { 0 }
           | if self.user    { PAGE_USER  } else { 0 }
           | if self.execute { 0 } else { PAGE_NXE }
+          | if self.cache   { 0 } else { PAGE_CACHE_DISABLE }
     }
 }
 

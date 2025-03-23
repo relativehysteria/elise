@@ -143,7 +143,7 @@ impl Shared {
     }
 
     /// Returns a reference to the base of the next stack
-    pub fn stack_ref(&self) -> &AtomicU64 {
+    pub fn stack(&self) -> &AtomicU64 {
         &self.next_stack
     }
 }
