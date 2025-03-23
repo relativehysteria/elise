@@ -1,4 +1,7 @@
+//! KERNEL STUFF
+
 #![no_std]
+#![forbid(missing_docs)]
 
 pub mod core_locals;
 pub mod mm;

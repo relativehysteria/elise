@@ -1,10 +1,11 @@
-/// A core-exclusive data structure which can be accessed via the `core!()`
-/// macro.
+//! A core-exclusive data structure which can be accessed via the `core!()`
+//! macro.
 
 use page_table::{VirtAddr, PhysAddr};
 use crate::SHARED;
 
 #[derive(Debug, Clone)]
+/// Core local data
 pub struct CoreLocals {
     /// The address of this structure
     address: VirtAddr,
