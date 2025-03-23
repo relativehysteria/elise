@@ -44,7 +44,7 @@ pub struct Features {
 
 impl Features {
     /// Returns the set of CPU features
-    pub fn new() -> Self {
+    pub fn get() -> Self {
         let mut features: Self = Default::default();
 
         unsafe {
