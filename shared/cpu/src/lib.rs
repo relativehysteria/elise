@@ -2,6 +2,9 @@
 
 #![no_std]
 
+mod features;
+pub use features::*;
+
 use core::arch::asm;
 
 #[inline]
@@ -67,4 +70,29 @@ pub unsafe fn rdtsc() -> u64 {
 pub const fn canonicalize_address(high_bits: usize, addr: u64) -> u64 {
     assert!(high_bits < 64);
     (((addr as i64) << high_bits) >> high_bits) as u64
+}
+
+/// Performs cpuid passing in eax and ecx as parameters. Returns a tuple
+/// containing the resulting (eax, ebx, ecx, edx)
+#[inline]
+pub unsafe fn cpuid(eax: u32, ecx: u32) -> (u32, u32, u32, u32) {
+    let mut oeax: u32;
+    let mut oebx: u32;
+    let mut oecx: u32;
+    let mut oedx: u32;
+
+    unsafe {
+        asm!(
+            "push rbx",
+            "cpuid",
+            "mov {0:e}, ebx",
+            "pop rbx",
+            out(reg) oebx,
+            out("edx") oedx,
+            inout("eax") eax => oeax,
+            inout("ecx") ecx => oecx,
+        );
+    }
+
+    (oeax, oebx, oecx, oedx)
 }
