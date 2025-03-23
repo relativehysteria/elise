@@ -3,7 +3,7 @@ use crate::cpuid;
 /// Structure representing the various CPU features which are supported on this
 /// system. These can be detected with the `get_cpu_features` function
 #[derive(Default, Debug)]
-pub struct CPUFeatures {
+pub struct Features {
     pub max_cpuid: u32,
     pub max_extended_cpuid: u32,
 
@@ -42,10 +42,10 @@ pub struct CPUFeatures {
     pub avx512f: bool,
 }
 
-impl CPUFeatures {
+impl Features {
     /// Returns the set of CPU features
-    pub fn new() -> CPUFeatures {
-        let mut features: CPUFeatures = Default::default();
+    pub fn new() -> Self {
+        let mut features: Self = Default::default();
 
         unsafe {
             features.max_cpuid          = cpuid(0, 0).0;
