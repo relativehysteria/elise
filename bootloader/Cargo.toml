@@ -12,3 +12,4 @@ rangeset = { path = "../shared/rangeset" }
 page_table = { path = "../shared/page_table" }
 elf_parser = { path = "../shared/elf_parser" }
 shared_data = { path = "../shared/shared_data" }
+const_assert = { path = "../shared/const_assert" }

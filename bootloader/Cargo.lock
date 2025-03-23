@@ -6,6 +6,7 @@ version = 4
 name = "bootloader"
 version = "0.1.0"
 dependencies = [
+ "const_assert",
  "cpu",
  "elf_parser",
  "oncelock",

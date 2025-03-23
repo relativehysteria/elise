@@ -3,6 +3,9 @@
 
 #![no_std]
 
+mod constants;
+pub use constants::*;
+
 use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;
 use oncelock::OnceLock;
@@ -10,49 +13,6 @@ use serial::SerialDriver;
 use rangeset::RangeSet;
 use elf_parser::Elf;
 use page_table::{PageTable, VirtAddr};
-
-/// Macro that checks whether a value is 4K aligned at compile time
-macro_rules! is_4k_aligned {
-    ($x:expr) => {
-        const_assert::const_assert!(($x & (!(4096 - 1))) == $x);
-    }
-}
-
-/// The base at which the kernel code will be loaded.
-///
-/// This is the value in kernel/.cargo/config.toml
-pub const KERNEL_CODE_BASE: u64 = 0xFFFF_FFFF_CAFE_0000;
-
-/// The base at which the SHARED data structure will be loaded
-pub const KERNEL_SHARED_BASE: u64 = KERNEL_CODE_BASE - 0x1_0000;
-
-/// The base address to use for the trampoline code that is present both in the
-/// bootloader and in the kernel page tables.
-///
-/// The trampoline is a small piece of code that transistions from the
-/// bootloader page table into the kernel page table before jumping to the
-/// kernel.
-pub const TRAMPOLINE_ADDR: u64 = KERNEL_SHARED_BASE - 0x1_0000;
-
-/// The base address to use for the kernel stacks for the first core.
-pub const KERNEL_STACK_BASE: u64 = TRAMPOLINE_ADDR - 0x1_0000;
-
-/// Size to allocate for kernel stacks.
-pub const KERNEL_STACK_SIZE: u64 = 128 * 0x1000;
-
-/// Padding space to add between kernel stacks to prevent overwrites and such.
-pub const KERNEL_STACK_PAD: u64 = 8 * 0x1000;
-// XXX: Maybe have unmapped guard pages instead of padding?
-
-/// The size of the whole stack together with its padding
-pub const KERNEL_STACK_SIZE_PADDED: u64 = KERNEL_STACK_SIZE + KERNEL_STACK_PAD;
-
-// Validate all of the constants
-is_4k_aligned!(KERNEL_CODE_BASE);
-is_4k_aligned!(KERNEL_SHARED_BASE);
-is_4k_aligned!(TRAMPOLINE_ADDR);
-is_4k_aligned!(KERNEL_STACK_BASE);
-is_4k_aligned!(KERNEL_STACK_SIZE_PADDED);
 
 #[derive(Debug, Clone)]
 /// Information about the state of the bootloader. All virtual addresses are
