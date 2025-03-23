@@ -6,9 +6,10 @@ use bootloader::{efi, mm, trampoline, SHARED, println, print};
 use serial::SerialDriver;
 use page_table::{
     VirtAddr, PageTable, MapRequest, PageType, Permissions,
-    PAGE_PRESENT, PAGE_WRITE, PAGE_NXE};
+    PAGE_PRESENT, PAGE_WRITE, PAGE_SIZE, PAGE_NXE};
 use shared_data::{
     KERNEL_STACK_BASE, KERNEL_SHARED_BASE, KERNEL_STACK_SIZE_PADDED,
+    KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE,
     BootloaderState, Shared};
 
 
@@ -182,6 +183,35 @@ fn load_kernel() {
         }
     }
     println!();
+
+    // Map in the physical memory window
+    //
+    // First, get CPU features to know which pages we can use
+    let features = cpu::Features::get();
+
+    // Determine the corresponding page type
+    let page_type = if features.gbyte_pages {
+        PageType::Page1G
+    } else if features.pse {
+        PageType::Page2M
+    } else {
+        PageType::Page4K
+    };
+
+    // Get the raw page table entry mask for this entry
+    let page_mask = 0 | PAGE_WRITE | PAGE_PRESENT | match page_type {
+        PageType::Page4K => 0,
+        _ => PAGE_SIZE,
+    };
+
+    // Map the window in!
+    for paddr in (0..KERNEL_PHYS_WINDOW_SIZE).step_by(page_type as usize) {
+        let virt = VirtAddr(KERNEL_PHYS_WINDOW_BASE + paddr);
+        unsafe {
+            table.map_raw(&mut pmem, virt, page_type, paddr | page_mask)
+                .unwrap();
+        }
+    }
 }
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
