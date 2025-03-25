@@ -4,9 +4,7 @@
 #![forbid(missing_docs)]
 #![feature(alloc_error_handler)]
 
-pub mod core_locals;
+#[macro_use] pub mod print;
+#[macro_use] pub mod core_locals;
 pub mod mm;
-
-/// Data shared between the bootloader and the kernel
-pub static SHARED: oncelock::OnceLock<&'static shared_data::Shared> =
-    oncelock::OnceLock::new();
+pub extern crate core_reqs;
