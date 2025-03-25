@@ -4,22 +4,14 @@
 
 use cpu;
 
-/// The number of ports to be used by this driver
-const N_PORTS: usize = 4;
-
-/// Addresses of the serial ports that are to be used by this driver
-pub const PORT_ADDRESSES: [*const u8; N_PORTS] = [
-    0x2F8 as *const u8,
-    0x3F8 as *const u8,
-    0x2E8 as *const u8,
-    0x3E8 as *const u8,
-];
+/// Addresses of the legacy serial ports that are to be used by this driver
+pub const PORT_ADDRESSES: [u16; 4] = [0x2F8, 0x3F8, 0x2E8, 0x3E8];
 
 #[derive(Clone, Debug)]
 /// The serial driver implementation for COM ports defined by `PORT_ADDRESSES`
 pub struct SerialDriver {
     /// Index map of which ports in `PORT_ADDRESSES` are valid.
-    ports: [bool; N_PORTS]
+    pub ports: [Option<u16>; PORT_ADDRESSES.len()]
 }
 
 impl SerialDriver {
@@ -28,11 +20,12 @@ impl SerialDriver {
     pub unsafe fn init() -> Self {
         // Create a new serial port driver
         let mut driver = Self {
-            ports: [false; N_PORTS],
+            ports: [None; PORT_ADDRESSES.len()],
         };
 
         // Go through each defined port
-        for (idx, &port) in PORT_ADDRESSES.iter().enumerate() {
+        for (idx, &port_addr) in PORT_ADDRESSES.iter().enumerate() {
+            let port = port_addr as *mut u8;
             unsafe {
                 // Disable all interrupts
                 cpu::out8(port.offset(1), 0x00);
@@ -65,7 +58,7 @@ impl SerialDriver {
                     cpu::out8(port.offset(4), 0x0F);
 
                     // Register the port
-                    driver.ports[idx] = true;
+                    driver.ports[idx] = Some(port_addr);
                 }
             }
         }
@@ -78,11 +71,8 @@ impl SerialDriver {
     /// Read a byte from whatever port has a byte available
     pub fn read_byte(&mut self) -> Option<u8> {
         // Go through each port
-        for (idx, valid) in self.ports.iter().enumerate() {
-            // If the port is not valid, skip it
-            if !valid { continue; }
-
-            let port = PORT_ADDRESSES[idx];
+        for port_addr in self.ports.iter().filter(|p| p.is_some()) {
+            let port = port_addr.unwrap() as *mut u8;
 
             unsafe {
                 // Check if there is a byte available
@@ -104,11 +94,8 @@ impl SerialDriver {
         if byte == b'\n' { self.write_byte(b'\r'); }
 
         // Go through each port
-        for (idx, valid) in self.ports.iter().enumerate() {
-            // If the port is not valid, skip it
-            if !valid { continue; }
-
-            let port = PORT_ADDRESSES[idx];
+        for port_addr in self.ports.iter().filter(|p| p.is_some()) {
+            let port = port_addr.unwrap() as *mut u8;
 
             // Wait for the transmit buffer to be ready
             unsafe {
