@@ -2,6 +2,7 @@
 
 #![no_std]
 #![forbid(missing_docs)]
+#![feature(alloc_error_handler)]
 
 pub mod core_locals;
 pub mod mm;
