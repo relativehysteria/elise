@@ -5,7 +5,6 @@ use core::alloc::{GlobalAlloc, Layout};
 use page_table::{PhysMem, PhysAddr, VirtAddr};
 use shared_data::{
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE, KERNEL_VMEM_BASE};
-use crate::SHARED;
 
 #[repr(transparent)]
 /// Wrapper around a rangeset that implemente the `PhysMem` trait
@@ -38,7 +37,7 @@ impl PhysMem for PhysicalMemory {
         // * NUMA
 
         // Get access to physical memory
-        let mut phys_mem = SHARED.get().free_memory().lock();
+        let mut phys_mem = core!().shared.free_memory().lock();
         let phys_mem = phys_mem.as_mut()?;
 
         // Allocate directly from physical memory
@@ -67,7 +66,7 @@ pub fn receive_vaddr_4k(size: u64) -> VirtAddr {
         "Invalid size for virtual region allocation");
 
     // Get a new virtual region that is free
-    let reserve = GUARD_PAGE.checked_add(size as u64)
+    let reserve = GUARD_PAGE.checked_add(size)
         .expect("Virtual address allocation overflow");
     let ret = NEXT_VADDR.fetch_add(reserve, Ordering::SeqCst);
 

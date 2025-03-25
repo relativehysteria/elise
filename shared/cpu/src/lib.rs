@@ -60,6 +60,13 @@ pub unsafe fn wrmsr(msr: u32, val: u64) {
 }
 
 #[inline]
+/// Set the GS base
+pub unsafe fn set_gs_base(base: u64) {
+    const IA32_GS_BASE: u32 = 0xC0000101;
+    unsafe { wrmsr(IA32_GS_BASE, base) };
+}
+
+#[inline]
 /// Calls RDTSC
 pub unsafe fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() as u64 }

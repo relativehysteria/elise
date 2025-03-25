@@ -4,10 +4,15 @@
 use page_table::VirtAddr;
 use shared_data::{Shared, KERNEL_SHARED_BASE};
 
+#[allow(dead_code)]
 #[derive(Clone)]
+#[repr(C)]
 /// Core local data
 pub struct CoreLocals {
     /// The address of this structure
+    ///
+    /// This address MUST BE THE FIRST field of this struct because the
+    /// `core!()` macro relies on it
     address: VirtAddr,
 
     /// A unique identifier allocated for this core
@@ -27,6 +32,7 @@ pub struct CoreLocals {
 #[inline]
 /// Returns a reference to the data local to this core
 pub fn get_core_locals() -> &'static CoreLocals {
+    // Get the first `u64` from `CoreLocals`, which should be the address
     unsafe {
         let ptr: usize;
         core::arch::asm!(
@@ -57,7 +63,7 @@ pub fn init(core_id: u32) {
     let locals = CoreLocals {
         address: VirtAddr(core_locals_ptr),
         id:      core_id,
-        shared:  shared,
+        shared,
     };
 
     unsafe {
