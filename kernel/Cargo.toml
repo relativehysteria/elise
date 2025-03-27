@@ -8,5 +8,6 @@ shared_data = { path = "../shared/shared_data" }
 page_table = { path = "../shared/page_table" }
 core_reqs = { path = "../shared/core_reqs" }
 oncelock = { path = "../shared/oncelock" }
+spinlock = { path = "../shared/spinlock" }
 serial = { path = "../shared/serial/" }
 cpu = { path = "../shared/cpu" }

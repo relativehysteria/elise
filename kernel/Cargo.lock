@@ -31,6 +31,7 @@ dependencies = [
  "page_table",
  "serial",
  "shared_data",
+ "spinlock",
 ]
 
 [[package]]

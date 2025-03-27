@@ -15,7 +15,7 @@ build_component() {
 
 build_trampoline() {
     # If this is the first run, the target directory won't be created yet
-    mkdir "bootloader/target"
+    mkdir -p "bootloader/target"
     nasm -f bin -o "bootloader/target/trampoline.bin" "bootloader/src/trampoline.asm" || exit 1
 }
 

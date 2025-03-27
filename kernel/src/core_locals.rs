@@ -1,11 +1,13 @@
 //! A core-exclusive data structure which can be accessed via the `core!()`
 //! macro.
 
+use core::alloc::Layout;
 use page_table::VirtAddr;
 use shared_data::{Shared, KERNEL_SHARED_BASE};
+use spinlock::SpinLock;
+use crate::mm::FreeList;
 
 #[allow(dead_code)]
-#[derive(Clone)]
 #[repr(C)]
 /// Core local data
 pub struct CoreLocals {
@@ -20,6 +22,35 @@ pub struct CoreLocals {
 
     /// Data shared between the bootloader and the kernel
     pub shared: &'static Shared,
+
+    /// Free lists for each power-of-two size.
+    /// The free list size is `(1 << (idx + 3))`
+    free_lists: [SpinLock<FreeList>; 61],
+}
+
+impl CoreLocals {
+    /// Get a free list which can satisfy `layout`
+    pub unsafe fn free_list(&self, layout: Layout) -> &SpinLock<FreeList> {
+        // The minimum freelist allocation is 8 bytes. Round up if needed
+        let size = core::cmp::max(layout.size(), 8);
+
+        // Round up size to the nearest power of two and get the log2 of it
+        // to determine the index into the free lists
+        let idx = 64 - (size - 1).leading_zeros();
+
+        // Compute the alignment of the free list associated with this memory.
+        // Free lists are naturally aligned until 4096 byte sizes, at which
+        // point they remain only 4096 byte aligned
+        let free_list_align = 1 << core::cmp::min(idx, 12);
+        assert!(free_list_align >= layout.align(),
+            "Cannot satisfy alignment requirement from free list");
+
+        // Get the free list corresponding to this size.
+        // idx gives log2(size) + 1, but the array starts at 8 bytes (idx 3 in
+        // log2 scale), so adjust for the offset
+        &self.free_lists[idx as usize - 3]
+
+    }
 }
 
 /// Returns a reference to current core locals
@@ -59,11 +90,44 @@ pub fn init(core_id: u32) {
         ).unwrap().unwrap() + shared_data::KERNEL_PHYS_WINDOW_BASE
     };
 
+    macro_rules! generate_freelists {
+        ($($size:expr),*) => {
+            [
+                $(
+                    SpinLock::new(FreeList::new($size)),
+                )*
+            ]
+        };
+    }
+
     // Create the struct
     let locals = CoreLocals {
-        address: VirtAddr(core_locals_ptr),
-        id:      core_id,
-        shared,
+        address:    VirtAddr(core_locals_ptr),
+        id:         core_id,
+        shared:     shared,
+        free_lists: generate_freelists!(
+            0x0000000000000008, 0x0000000000000010, 0x0000000000000020,
+            0x0000000000000040, 0x0000000000000080, 0x0000000000000100,
+            0x0000000000000200, 0x0000000000000400, 0x0000000000000800,
+            0x0000000000001000, 0x0000000000002000, 0x0000000000004000,
+            0x0000000000008000, 0x0000000000010000, 0x0000000000020000,
+            0x0000000000040000, 0x0000000000080000, 0x0000000000100000,
+            0x0000000000200000, 0x0000000000400000, 0x0000000000800000,
+            0x0000000001000000, 0x0000000002000000, 0x0000000004000000,
+            0x0000000008000000, 0x0000000010000000, 0x0000000020000000,
+            0x0000000040000000, 0x0000000080000000, 0x0000000100000000,
+            0x0000000200000000, 0x0000000400000000, 0x0000000800000000,
+            0x0000001000000000, 0x0000002000000000, 0x0000004000000000,
+            0x0000008000000000, 0x0000010000000000, 0x0000020000000000,
+            0x0000040000000000, 0x0000080000000000, 0x0000100000000000,
+            0x0000200000000000, 0x0000400000000000, 0x0000800000000000,
+            0x0001000000000000, 0x0002000000000000, 0x0004000000000000,
+            0x0008000000000000, 0x0010000000000000, 0x0020000000000000,
+            0x0040000000000000, 0x0080000000000000, 0x0100000000000000,
+            0x0200000000000000, 0x0400000000000000, 0x0800000000000000,
+            0x1000000000000000, 0x2000000000000000, 0x4000000000000000,
+            0x8000000000000000
+        ),
     };
 
     unsafe {
