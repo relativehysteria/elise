@@ -37,13 +37,17 @@ impl PhysMem for PhysicalMemory {
         // If someone wants to allocate a 4-KiB page from physical memory,
         // use our free lists
         if layout.size() == 4096 && layout.align() == 4096 {
-            None
+            unsafe {
+                let ptr = core!().free_list(layout).lock().pop();
+                Some(PhysAddr(ptr as u64 - KERNEL_PHYS_WINDOW_BASE))
+            }
         } else {
             // Get access to physical memory
             let mut phys_mem = core!().shared.free_memory().lock();
             let phys_mem = phys_mem.as_mut()?;
 
             // Allocate directly from physical memory
+            // TODO: NUMA
             let allocation = phys_mem
                 .allocate(layout.size() as u64, layout.align() as u64).ok()??;
             Some(PhysAddr(allocation))
@@ -167,7 +171,6 @@ impl FreeList {
                 .ok().flatten()
                 .expect("Failed to allocate physical memory") as u64
         };
-
         // Split up this allocation into blocks backed by this freelist
         // and make them available
         for offset in (0..4096).step_by(self.size) {
@@ -207,7 +210,6 @@ impl FreeList {
             // just point the blocks to our physical memory window.
             if self.size <= 4096 {
                 self.allocate_page_for_blocks();
-
             // Blocks backed by this freelist don't fit into a page. Just
             // allocate new virtual memory for the block and return the pointer
             } else {
@@ -273,9 +275,9 @@ impl FreeList {
 
         // Check if there is room for this allocation in the free stack,
         // or if we need to create a new stack
-        let free_slots = unsafe {
-            (*(self.head.0 as *const FreeListNode)).free_slots };
-        if self.head.0 == 0 || free_slots == 0 {
+        let check = self.head.0 == 0 ||
+            unsafe { (*(self.head.0 as *const FreeListNode)).free_slots == 0 };
+        if check {
             // No free slots, create a new stack out of the freed vaddr
             let list = unsafe { &mut *(vaddr as *mut FreeListNode) };
 
@@ -334,6 +336,6 @@ unsafe impl GlobalAlloc for GlobalAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         // Put the allocation back into our freelists
-        unsafe { core!().free_list(layout).lock().push(ptr) }
+        unsafe { core!().free_list(layout).lock().push(ptr); }
     }
 }
