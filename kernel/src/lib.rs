@@ -1,7 +1,6 @@
 //! KERNEL STUFF
 
 #![no_std]
-#![forbid(missing_docs)]
 #![feature(alloc_error_handler)]
 
 #![feature(lang_items)]
@@ -14,6 +13,7 @@ pub extern crate alloc;
 #[macro_use] pub mod core_locals;
 pub mod panic;
 pub mod mm;
+pub mod interrupts;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}

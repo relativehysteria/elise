@@ -49,7 +49,8 @@ impl PhysMem for PhysicalMemory {
             // Allocate directly from physical memory
             // TODO: NUMA
             let allocation = phys_mem
-                .allocate(layout.size() as u64, layout.align() as u64).ok()??;
+                .allocate(layout.size() as u64, layout.align() as u64)
+                .ok().flatten()?;
             Some(PhysAddr(allocation))
         }
     }
@@ -62,7 +63,7 @@ impl PhysMem for PhysicalMemory {
 /// but does not map in the memory it points to. As such, this can be used to
 /// get a virtual address for page mappings where the virtual address of the
 /// mapping doesn't matter.
-pub fn receive_vaddr_4k(size: u64) -> VirtAddr {
+fn receive_vaddr_4k(size: u64) -> VirtAddr {
     /// Base address for virtual allocations
     static NEXT_VADDR: AtomicU64 = AtomicU64::new(KERNEL_VMEM_BASE);
 

@@ -6,6 +6,7 @@ use page_table::VirtAddr;
 use shared_data::{Shared, KERNEL_SHARED_BASE};
 use spinlock::SpinLock;
 use crate::mm::FreeList;
+use crate::interrupts::Interrupts;
 
 #[allow(dead_code)]
 #[repr(C)]
@@ -22,6 +23,10 @@ pub struct CoreLocals {
 
     /// Data shared between the bootloader and the kernel
     pub shared: &'static Shared,
+
+    /// Implementation of interrupts. Used to add interrupt handlers to the
+    /// interrupt table. If `None`, it hasn't been initialized yet.
+    interrupts: SpinLock<Option<Interrupts>>,
 
     /// Free lists for each power-of-two size.
     /// The free list size is `(1 << (idx + 3))`
@@ -49,7 +54,11 @@ impl CoreLocals {
         // idx gives log2(size) + 1, but the array starts at 8 bytes (idx 3 in
         // log2 scale), so adjust for the offset
         &self.free_lists[idx as usize - 3]
+    }
 
+    /// Get access to the interrupt table
+    pub unsafe fn interrupts(&self) -> &SpinLock<Option<Interrupts>> {
+        &self.interrupts
     }
 }
 
@@ -105,6 +114,7 @@ pub fn init(core_id: u32) {
         address:    VirtAddr(core_locals_ptr),
         id:         core_id,
         shared:     shared,
+        interrupts: SpinLock::new(None),
         free_lists: generate_freelists!(
             0x0000000000000008, 0x0000000000000010, 0x0000000000000020,
             0x0000000000000040, 0x0000000000000080, 0x0000000000000100,
