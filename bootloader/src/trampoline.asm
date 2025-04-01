@@ -31,4 +31,4 @@ global .trampoline
     mov rdi, rcx ; core_id
 
     ; Jump to the entry point
-    jmp rax
+    call rax
