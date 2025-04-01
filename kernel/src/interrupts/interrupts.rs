@@ -1,10 +1,11 @@
 //! Routines and structures for manipulating x86 interrupts
 
-use core::mem::ManuallyDrop;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::vec;
 use core::arch::asm;
+use core::mem::ManuallyDrop;
+use crate::interrupts::handler;
 
 /// A 64-bit task state segment structure
 #[repr(C, packed)]
@@ -45,6 +46,13 @@ pub struct Interrupts {
     pub tss: Box<Tss>,
     pub idt: Vec<IdtEntry>,
     pub gdt: Vec<u64>,
+}
+
+impl Interrupts {
+    /// Register an interrupt handler
+    fn register(&mut self, interrupt_number: u8, handler: InterruptDispatch) {
+        self.dispatch[interrupt_number as usize] = Some(handler);
+    }
 }
 
 /// Shape of a raw 64-bit interrupt frame
@@ -203,12 +211,12 @@ pub fn init() {
 
         /// Interrupt gate type for 64-bit mode
         const X64_INTERRUPT_GATE: u32 = 0xE;
-        let handler_addr = default_interrupt_handler as u64;
+        let handler_addr = interrupt_entry as u64;
 
         // Construct the IDT entry pointing to the default handler
         idt.push(IdtEntry::new(
-            0x08,               // Kernel code segment
-            handler_addr,       // Address of the handler
+            0x08,               // Kernel code segment in the GDT
+            handler_addr,       // Address of the handler for all interrupts
             ist,                // IST index
             X64_INTERRUPT_GATE, // Type (interrupt gate)
             0                   // DPL
@@ -227,16 +235,88 @@ pub fn init() {
         );
     }
 
-    // Create the interrupts structure
-    *interrupts = Some(Interrupts { dispatch: [None; 256], gdt, idt, tss });
+    // Create the interrupts structure and register our handlers
+    let mut ints = Interrupts { dispatch: [None; 256], gdt, idt, tss };
+    ints.register(0x2, handler::nmi);
+    ints.register(0xE, handler::page_fault);
+
+    *interrupts = Some(ints);
 }
 
-unsafe extern "C" fn default_interrupt_handler(
-    _interrupt_number: u8,
-    _frame: &mut InterruptFrame,
-    _error_code: u64,
-    _regs: &mut AllRegs,
-) -> bool {
-    println_shatter!("Unhandled interrupt: {}", _interrupt_number);
-    true
+unsafe extern "C" fn interrupt_entry(
+    number: u8,
+    frame: &mut InterruptFrame,
+    error: u64,
+    regs: &mut AllRegs,
+) {
+    // TODO:
+    // * EOI
+    // * Drain before soft reboot
+    // * enter exception/interrupt
+
+    // Dispatch the interrupt if applicable
+    let handled = unsafe {
+        core!().interrupts().lock().as_ref().unwrap()
+            .dispatch[number as usize]
+            .map_or(false, |handler| handler(number, frame, error, regs))
+    };
+
+    // If we couldn't handle the interrupt, panic
+    if !handled {
+        panic_interrupt(number, error, frame, regs);
+    }
+}
+
+/// Logs and panics on an unhandled interrupt
+fn panic_interrupt(
+    number: u8,
+    error: u64,
+    frame: &InterruptFrame,
+    regs: &AllRegs,
+) {
+    /// Macro to copy unaligned fields from a packed struct.
+    macro_rules! regs {
+        ($regs:expr, $($field:ident),*) => { ($($regs.$field,)*) };
+    }
+
+    let (rax, rcx, rdx, rbx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13,
+        r14, r15, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9,
+        xmm10, xmm11, xmm12, xmm13, xmm14, xmm15) = regs!(regs,
+        rax, rcx, rdx, rbx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14,
+        r15, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9,
+        xmm10, xmm11, xmm12, xmm13, xmm14, xmm15);
+
+    let (rsp, rfl, rip) = regs!(frame, rsp, rflags, rip);
+
+    panic!(
+        r#"Unhandled Interrupt {:#x} (Error Code: {:#x}) on Core {}
+Registers at Exception:
+    rax {:016x} rcx {:016x} rdx {:016x} rbx {:016x}
+    rsp {:016x} rbp {:016x} rsi {:016x} rdi {:016x}
+    r8  {:016x} r9  {:016x} r10 {:016x} r11 {:016x}
+    r12 {:016x} r13 {:016x} r14 {:016x} r15 {:016x}
+    rfl {:016x}
+    rip {:016x}
+    cr2 {:016x}
+
+    xmm0  {:032x} xmm1  {:032x} xmm2  {:032x} xmm3  {:032x}
+    xmm4  {:032x} xmm5  {:032x} xmm6  {:032x} xmm7  {:032x}
+    xmm8  {:032x} xmm9  {:032x} xmm10 {:032x} xmm11 {:032x}
+    xmm12 {:032x} xmm13 {:032x} xmm14 {:032x} xmm15 {:032x}
+"#,
+        number, error, core!().id,
+
+        rax, rcx, rdx, rbx,
+        rsp, rbp, rsi, rdi,
+        r8,   r9, r10, r11,
+        r12, r13, r14, r15,
+        rfl,
+        rip,
+        cpu::read_cr2(),
+
+        xmm0,  xmm1,  xmm2,  xmm3,
+        xmm4,  xmm5,  xmm6,  xmm7,
+        xmm8,  xmm9,  xmm10, xmm11,
+        xmm12, xmm13, xmm14, xmm15
+    );
 }

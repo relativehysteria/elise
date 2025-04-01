@@ -79,6 +79,14 @@ pub const fn canonicalize_address(high_bits: usize, addr: u64) -> u64 {
     (((addr as i64) << high_bits) >> high_bits) as u64
 }
 
+#[inline]
+/// Read `cr2`
+pub fn read_cr2() -> u64 {
+    let mut cr2: u64;
+    unsafe { asm!("mov {}, cr2", out(reg) cr2); }
+    cr2
+}
+
 /// Performs cpuid passing in eax and ecx as parameters. Returns a tuple
 /// containing the resulting (eax, ebx, ecx, edx)
 #[inline]
