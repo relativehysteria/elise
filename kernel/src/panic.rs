@@ -3,7 +3,16 @@ use core::panic::PanicInfo;
 
 #[panic_handler]
 /// This is the panic routine used by rust within our kernel
-pub fn panic(_info: &PanicInfo) -> ! {
+pub fn panic(info: &PanicInfo) -> ! {
+    // Print the location info
+    if let Some(loc) = info.location() {
+       print_shatter!("\n!!! PANIC !!! {} {}:{} ----",
+            loc.file(), loc.line(), loc.column());
+    }
+
+    // Print the message
+    print_shatter!(" {} ----\n", info.message());
+
     // Halt
     unsafe { cpu::halt() };
 }
