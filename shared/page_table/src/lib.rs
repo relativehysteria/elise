@@ -281,12 +281,6 @@ impl PageTable {
         Self { table: cr3 }
     }
 
-    #[inline]
-    /// Returns the address of the page table
-    pub fn addr(&self) -> PhysAddr {
-        self.table
-    }
-
     /// Translate a virtual address in this page table into its components.
     pub fn components<P: PhysMem>(&self, phys_mem: &mut P, vaddr: VirtAddr)
             -> Result<Mapping, Error> {

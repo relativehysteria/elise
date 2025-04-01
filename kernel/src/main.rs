@@ -11,5 +11,5 @@ extern "C" fn entry(core_id: u32) -> ! {
     // Initialize the interrupts for this core
     interrupts::init();
 
-    panic!();
+    unsafe { kernel::panic::soft_reboot() };
 }

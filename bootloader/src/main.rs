@@ -222,7 +222,7 @@ unsafe fn jump_to_kernel() {
 
     // Get the kernel entry point, page table and stack addresses
     let entry = SHARED.get().kernel_image().lock().as_ref().unwrap().entry;
-    let table = SHARED.get().kernel_pt().lock().as_ref().unwrap().addr();
+    let table = SHARED.get().kernel_pt().lock().as_ref().unwrap().clone();
     let stack = VirtAddr(SHARED.get().stack().load(Ordering::SeqCst));
 
     // Make sure the stack is at its base

@@ -1,4 +1,5 @@
-//! Kernel panic handler
+//! Kernel panic handler and soft reboot routines
+
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -15,4 +16,13 @@ pub fn panic(info: &PanicInfo) -> ! {
 
     // Halt
     unsafe { cpu::halt() };
+}
+
+pub unsafe fn soft_reboot() -> ! {
+    // Get the trampoline pointer
+    let tramp = unsafe { shared_data::get_trampoline() };
+
+    // Get the bootloader state and jump to the bootloader
+    let bstate = core!().shared.bootloader().get();
+    unsafe { tramp(bstate.entry, bstate.stack, bstate.page_table.clone(), 0) };
 }

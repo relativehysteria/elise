@@ -16,7 +16,7 @@ build_component() {
 build_trampoline() {
     # If this is the first run, the target directory won't be created yet
     mkdir -p "bootloader/target"
-    nasm -f bin -o "bootloader/target/trampoline.bin" "bootloader/src/trampoline.asm" || exit 1
+    nasm -f bin -o "bootloader/target/trampoline.bin" "shared/shared_data/src/trampoline.asm" || exit 1
 }
 
 # Build the kernel and copy it to where the bootloader expects it
@@ -37,6 +37,7 @@ smp="1,cores=1,threads=1,sockets=1"
 mem_mb="4096"
 
 sudo qemu-system-x86_64 \
+    -s -S \
     -enable-kvm \
     -m "$mem_mb" \
     -smp "$smp" \

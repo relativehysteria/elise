@@ -4,7 +4,9 @@
 #![no_std]
 
 mod constants;
+mod trampoline;
 pub use constants::*;
+pub use trampoline::*;
 
 use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;

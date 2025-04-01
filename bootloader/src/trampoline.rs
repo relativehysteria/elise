@@ -1,16 +1,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
-use page_table::{VirtAddr, PhysAddr, PageTable, PageType, MapRequest, Permissions};
-use shared_data::TRAMPOLINE_ADDR;
+use page_table::{VirtAddr, PageTable, PageType, MapRequest, Permissions};
+use shared_data::{TRAMPOLINE_ADDR, Trampoline, get_trampoline};
 use crate::SHARED;
-
-/// The trampoline function. This has to be identical to the function specified
-/// in trampoline.asm
-pub type Trampoline = unsafe extern "sysv64" fn(
-    entry: VirtAddr,
-    stack: VirtAddr,
-    table: PhysAddr,
-    core_id: u32,
-) -> !;
 
 /// The raw page table entry for the trampoline. This entry can be used to map
 /// the trampoline to page tables without duplicating the bytes in physical
@@ -98,5 +89,5 @@ pub unsafe fn prepare() -> Option<Trampoline> {
     }
 
     // Return the function pointer
-    Some(unsafe { core::mem::transmute(TRAMPOLINE_ADDR) })
+    Some(unsafe { get_trampoline() })
 }
