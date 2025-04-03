@@ -2,24 +2,20 @@
 
 #![allow(unused_variables)]
 
-use crate::interrupts::{InterruptFrame, AllRegs};
+use crate::interrupts::InterruptArgs;
 
 /// NMI handler
-pub unsafe fn nmi(
-    number: u8,
-    frame: &mut InterruptFrame,
-    error: u64,
-    regs: &mut AllRegs,
-) -> bool {
+pub unsafe fn nmi(args: InterruptArgs) -> bool {
     false
 }
 
 /// Page Fault handler
-pub unsafe fn page_fault(
-    number: u8,
-    frame: &mut InterruptFrame,
-    error: u64,
-    regs: &mut AllRegs,
-) -> bool {
+pub unsafe fn page_fault(args: InterruptArgs) -> bool {
+    println_shatter!("Page fault!");
     false
+}
+
+pub unsafe fn idk(args: InterruptArgs) -> bool {
+    println_shatter!("indeed!");
+    true
 }

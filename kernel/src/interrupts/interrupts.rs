@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::arch::asm;
 use core::mem::ManuallyDrop;
-use crate::interrupts::handler;
+use crate::interrupts::{handler, INT_HANDLERS, AllRegs};
 
 /// A 64-bit task state segment structure
 #[repr(C, packed)]
@@ -33,12 +33,35 @@ impl TablePtr {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+/// The interrupt information passed to all interrupt handlers
+pub struct InterruptArgs<'a> {
+    /// The interrupt vector identifier
+    pub number: u8,
+
+    /// The interrupt frame passed by the CPU to the handler
+    pub frame: &'a InterruptFrame,
+
+    /// The error number if the interrupt is an exception
+    pub error: u64,
+
+    /// The register snapshot at the point of the interrupt
+    pub regs: &'a AllRegs,
+}
+
+impl<'a> InterruptArgs<'a> {
+    #[inline]
+    /// Create a new
+    pub fn new(n: u8, f: &'a InterruptFrame, e: u64, r: &'a AllRegs) -> Self {
+        Self { number: n, frame: f, error: e, regs: r }
+    }
+}
+
 /// Interrupt dispatch routine.
 /// Arguments are (interrupt number, frame, error code, register state at int)
 ///
 /// Returns `true` if the interrupt was handled, and execution should continue
-type InterruptDispatch =
-    unsafe fn(u8, &mut InterruptFrame, u64, &mut AllRegs) -> bool;
+type InterruptDispatch = unsafe fn(InterruptArgs) -> bool;
 
 /// Structure to hold different dispatch routines for interrupts
 pub struct Interrupts {
@@ -56,7 +79,7 @@ impl Interrupts {
 }
 
 /// Shape of a raw 64-bit interrupt frame
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 pub struct InterruptFrame {
     pub rip:    usize,
@@ -100,44 +123,6 @@ impl IdtEntry {
             zero:        0,
         }
     }
-}
-
-/// Structure containing all registers at the state of the interrupt
-#[derive(Clone, Copy)]
-#[repr(C, packed)]
-pub struct AllRegs {
-    pub xmm15: u128,
-    pub xmm14: u128,
-    pub xmm13: u128,
-    pub xmm12: u128,
-    pub xmm11: u128,
-    pub xmm10: u128,
-    pub xmm9:  u128,
-    pub xmm8:  u128,
-    pub xmm7:  u128,
-    pub xmm6:  u128,
-    pub xmm5:  u128,
-    pub xmm4:  u128,
-    pub xmm3:  u128,
-    pub xmm2:  u128,
-    pub xmm1:  u128,
-    pub xmm0:  u128,
-
-    pub r15: u64,
-    pub r14: u64,
-    pub r13: u64,
-    pub r12: u64,
-    pub r11: u64,
-    pub r10: u64,
-    pub r9:  u64,
-    pub r8:  u64,
-    pub rbp: u64,
-    pub rdi: u64,
-    pub rsi: u64,
-    pub rdx: u64,
-    pub rcx: u64,
-    pub rbx: u64,
-    pub rax: u64,
 }
 
 /// Switch to a kernel-based GDT, load a TSS with a critical stack for #DF, #MC
@@ -211,7 +196,8 @@ pub fn init() {
 
         /// Interrupt gate type for 64-bit mode
         const X64_INTERRUPT_GATE: u32 = 0xE;
-        let handler_addr = interrupt_entry as u64;
+
+        let handler_addr = INT_HANDLERS[id] as u64;
 
         // Construct the IDT entry pointing to the default handler
         idt.push(IdtEntry::new(
@@ -243,37 +229,34 @@ pub fn init() {
     *interrupts = Some(ints);
 }
 
-unsafe extern "C" fn interrupt_entry(
+#[unsafe(no_mangle)]
+unsafe extern "sysv64" fn interrupt_entry(
     number: u8,
-    frame: &mut InterruptFrame,
+    frame: &InterruptFrame,
     error: u64,
-    regs: &mut AllRegs,
+    regs: &AllRegs,
 ) {
     // TODO:
     // * EOI
     // * Drain before soft reboot
     // * enter exception/interrupt
 
+    let args = InterruptArgs::new(number, frame, error, regs);
+
     // Dispatch the interrupt if applicable
     let handled = unsafe {
         core!().interrupts().lock().as_ref().unwrap()
             .dispatch[number as usize]
-            .map_or(false, |handler| handler(number, frame, error, regs))
+            .map_or(false, |handler| handler(args))
     };
 
-    // If we couldn't handle the interrupt, panic
-    if !handled {
-        panic_interrupt(number, error, frame, regs);
-    }
+    // If the interrupt was not handled, panic
+    if !handled { unhandled(args); }
 }
 
-/// Logs and panics on an unhandled interrupt
-fn panic_interrupt(
-    number: u8,
-    error: u64,
-    frame: &InterruptFrame,
-    regs: &AllRegs,
-) {
+#[inline(always)]
+fn unhandled(args: InterruptArgs) -> ! {
+
     /// Macro to copy unaligned fields from a packed struct.
     macro_rules! regs {
         ($regs:expr, $($field:ident),*) => { ($($regs.$field,)*) };
@@ -281,42 +264,36 @@ fn panic_interrupt(
 
     let (rax, rcx, rdx, rbx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13,
         r14, r15, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9,
-        xmm10, xmm11, xmm12, xmm13, xmm14, xmm15) = regs!(regs,
+        xmm10, xmm11, xmm12, xmm13, xmm14, xmm15) = regs!(args.regs,
         rax, rcx, rdx, rbx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14,
         r15, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9,
         xmm10, xmm11, xmm12, xmm13, xmm14, xmm15);
 
-    let (rsp, rfl, rip) = regs!(frame, rsp, rflags, rip);
+    let (rsp, rfl, rip) = regs!(args.frame, rsp, rflags, rip);
 
-    panic!(
-        r#"Unhandled Interrupt {:#x} (Error Code: {:#x}) on Core {}
-Registers at Exception:
-    rax {:016x} rcx {:016x} rdx {:016x} rbx {:016x}
-    rsp {:016x} rbp {:016x} rsi {:016x} rdi {:016x}
-    r8  {:016x} r9  {:016x} r10 {:016x} r11 {:016x}
-    r12 {:016x} r13 {:016x} r14 {:016x} r15 {:016x}
-    rfl {:016x}
-    rip {:016x}
-    cr2 {:016x}
+    let core_id = core!().id;
+    let cr2 = cpu::read_cr2();
 
-    xmm0  {:032x} xmm1  {:032x} xmm2  {:032x} xmm3  {:032x}
-    xmm4  {:032x} xmm5  {:032x} xmm6  {:032x} xmm7  {:032x}
-    xmm8  {:032x} xmm9  {:032x} xmm10 {:032x} xmm11 {:032x}
-    xmm12 {:032x} xmm13 {:032x} xmm14 {:032x} xmm15 {:032x}
-"#,
-        number, error, core!().id,
+    let number = args.number;
+    let error = args.error;
 
-        rax, rcx, rdx, rbx,
-        rsp, rbp, rsi, rdi,
-        r8,   r9, r10, r11,
-        r12, r13, r14, r15,
-        rfl,
-        rip,
-        cpu::read_cr2(),
-
-        xmm0,  xmm1,  xmm2,  xmm3,
-        xmm4,  xmm5,  xmm6,  xmm7,
-        xmm8,  xmm9,  xmm10, xmm11,
-        xmm12, xmm13, xmm14, xmm15
-    );
+    panic!(r#"
+Unhandled interrupt <{number:#X}>, error code <{error:#X}> on core <{core_id}>
+ ┌────────────────────────────────────────────────────────────────────────────────────
+ ├ rax {rax:016X} rcx {rcx:016X} rdx {rdx:016X} rbx {rbx:016X}
+ ├ rsp {rsp:016X} rbp {rbp:016X} rsi {rsi:016X} rdi {rdi:016X}
+ ├ r8  {r8:016X} r9  {r9:016X} r10 {r10:016X} r11 {r11:016X}
+ ├ r12 {r12:016X} r13 {r13:016X} r14 {r14:016X} r15 {r15:016X}
+ │
+ ├ rip {rip:016X} rfl {rfl:016X} cr2 {cr2:016X}
+ │
+ ├ xmm0  {xmm0:032X} xmm1  {xmm1:032X}
+ ├ xmm2  {xmm2:032X} xmm3  {xmm3:032X}
+ ├ xmm4  {xmm4:032X} xmm5  {xmm5:032X}
+ ├ xmm6  {xmm6:032X} xmm7  {xmm7:032X}
+ ├ xmm8  {xmm8:032X} xmm9  {xmm9:032X}
+ ├ xmm10 {xmm10:032X} xmm11 {xmm11:032X}
+ ├ xmm12 {xmm12:032X} xmm13 {xmm13:032X}
+ └ xmm14 {xmm14:032X} xmm15 {xmm15:032X}
+"#);
 }
