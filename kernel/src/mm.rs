@@ -63,7 +63,7 @@ impl PhysMem for PhysicalMemory {
 /// but does not map in the memory it points to. As such, this can be used to
 /// get a virtual address for page mappings where the virtual address of the
 /// mapping doesn't matter.
-fn receive_vaddr_4k(size: u64) -> VirtAddr {
+pub fn receive_vaddr_4k(size: u64) -> VirtAddr {
     /// Base address for virtual allocations
     static NEXT_VADDR: AtomicU64 = AtomicU64::new(KERNEL_VMEM_BASE);
 

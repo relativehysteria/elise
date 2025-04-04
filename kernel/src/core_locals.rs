@@ -1,12 +1,17 @@
 //! A core-exclusive data structure which can be accessed via the `core!()`
 //! macro.
 
+use core::sync::atomic::{AtomicU32, Ordering};
 use core::alloc::Layout;
 use page_table::VirtAddr;
 use shared_data::{Shared, KERNEL_SHARED_BASE};
 use spinlock::SpinLock;
 use crate::mm::FreeList;
 use crate::interrupts::Interrupts;
+use crate::apic::Apic;
+
+/// The value in `CoreLocals.apic_id` if the APIC is uninitialized
+const APIC_UNINIT: u32 = u32::MAX;
 
 #[allow(dead_code)]
 #[repr(C)]
@@ -24,8 +29,14 @@ pub struct CoreLocals {
     /// Data shared between the bootloader and the kernel
     pub shared: &'static Shared,
 
+    /// An initialized APIC implementation. `None` until initialized.
+    apic: SpinLock<Option<Apic>>,
+
+    /// Local APIC id.
+    apic_id: AtomicU32,
+
     /// Implementation of interrupts. Used to add interrupt handlers to the
-    /// interrupt table. If `None`, it hasn't been initialized yet.
+    /// interrupt table. `None` until initialized.
     interrupts: SpinLock<Option<Interrupts>>,
 
     /// Free lists for each power-of-two size.
@@ -59,6 +70,24 @@ impl CoreLocals {
     /// Get access to the interrupt table
     pub unsafe fn interrupts(&self) -> &SpinLock<Option<Interrupts>> {
         &self.interrupts
+    }
+
+    /// Get access to the local APIC
+    pub unsafe fn apic(&self) -> &SpinLock<Option<Apic>> {
+        &self.apic
+    }
+
+    /// Set the current core's APIC ID
+    pub unsafe fn set_apic_id(&self, apic_id: u32) {
+        self.apic_id.store(apic_id, Ordering::SeqCst);
+    }
+
+    /// Get access to the current core's APIC ID if initialized
+    pub unsafe fn apic_id(&self) -> Option<u32> {
+        match self.apic_id.load(Ordering::SeqCst) {
+            APIC_UNINIT => None,
+            x @ _       => Some(x),
+        }
     }
 }
 
@@ -114,6 +143,8 @@ pub fn init(core_id: u32) {
         address:    VirtAddr(core_locals_ptr),
         id:         core_id,
         shared:     shared,
+        apic:       SpinLock::new(None),
+        apic_id:    AtomicU32::new(APIC_UNINIT),
         interrupts: SpinLock::new(None),
         free_lists: generate_freelists!(
             0x0000000000000008, 0x0000000000000010, 0x0000000000000020,

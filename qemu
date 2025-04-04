@@ -37,7 +37,6 @@ smp="1,cores=1,threads=1,sockets=1"
 mem_mb="4096"
 
 sudo qemu-system-x86_64 \
-    -s -S \
     -enable-kvm \
     -m "$mem_mb" \
     -smp "$smp" \

@@ -14,6 +14,7 @@ pub extern crate alloc;
 pub mod panic;
 pub mod mm;
 pub mod interrupts;
+pub mod apic;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}
