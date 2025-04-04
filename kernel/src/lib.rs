@@ -15,6 +15,7 @@ pub mod panic;
 pub mod mm;
 pub mod interrupts;
 pub mod apic;
+pub mod time;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}

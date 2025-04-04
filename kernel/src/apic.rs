@@ -241,7 +241,7 @@ pub unsafe fn init() {
         // Receive a virtual address for our mapping
         let vaddr = crate::mm::receive_vaddr_4k(4096);
 
-        //Get access to the current page table
+        // Get access to the current page table
         let mut pmem = crate::mm::PhysicalMemory;
         let mut table = core!().shared.kernel_pt().lock();
         let table = table.as_mut().unwrap();

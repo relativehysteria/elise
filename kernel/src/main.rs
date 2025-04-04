@@ -14,5 +14,11 @@ extern "sysv64" fn entry(core_id: u32) -> ! {
     // Initialize the APIC
     unsafe { kernel::apic::init(); }
 
+    // BSP routines
+    if kernel::core!().id == 0 {
+        // Calibrate the TSC
+        unsafe { kernel::time::calibrate() };
+    }
+
     panic!();
 }
