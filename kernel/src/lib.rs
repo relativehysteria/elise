@@ -1,10 +1,10 @@
 //! KERNEL STUFF
 
 #![no_std]
+#![allow(internal_features, incomplete_features)]
 #![feature(alloc_error_handler)]
-
+#![feature(generic_const_exprs)]
 #![feature(lang_items)]
-#![allow(internal_features)]
 
 pub extern crate core_reqs;
 pub extern crate alloc;
@@ -16,6 +16,7 @@ pub mod mm;
 pub mod interrupts;
 pub mod apic;
 pub mod time;
+pub mod pci;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}

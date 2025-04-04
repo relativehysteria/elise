@@ -32,7 +32,7 @@ pub unsafe fn out8(addr: *const u8, byte: u8) {
 /// Read bytes from I/O port `addr`
 pub unsafe fn in32(addr: *const u32) -> u32 {
     let mut bytes: u32;
-    unsafe { asm!("in dx, eax", in("dx") addr, out("eax") bytes) };
+    unsafe { asm!("in eax, dx", in("dx") addr, out("eax") bytes) };
     bytes
 }
 
