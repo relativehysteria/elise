@@ -11,7 +11,12 @@ use shared_data::{
     KERNEL_STACK_BASE, KERNEL_SHARED_BASE, KERNEL_STACK_SIZE_PADDED,
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE,
     BootloaderState, Shared};
+use oncelock::OnceLock;
+use rangeset::RangeSet;
 
+/// Whenever the kernel soft reboots and jumps back to our bootloader, this is
+/// what the memory map state will become
+static MEMORY_SNAPSHOT: OnceLock<RangeSet> = OnceLock::new();
 
 /// Do some setup on the very first initial boot of the bootloader.
 /// Returns `true` if the kernel was already set up.
@@ -70,9 +75,10 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
     // Take a snapshot of the bootloader in its current state and mark the
     // bootloader as initialized. This snapshot is what we'll return to when the
     // kernel soft-reboots
-    SHARED.get().bootloader().set(BootloaderState {
-        free_memory: memory, page_table, entry, stack
-    });
+    SHARED.get().bootloader().set(BootloaderState { page_table, entry, stack });
+
+    // Save the memory snapshot as well
+    MEMORY_SNAPSHOT.set(memory);
 
     false
 }
@@ -85,11 +91,8 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
 ///   virtual mappings made after initialization will become invalid and as such
 ///   this function is inherently unsafe.
 unsafe fn restore_physical_memory() {
-    // Get the bootloader state
-    let state = SHARED.get().bootloader().get();
-
     // Restore physical memory
-    *SHARED.get().free_memory().lock() = Some(state.free_memory.clone());
+    *SHARED.get().free_memory().lock() = Some(MEMORY_SNAPSHOT.get().clone());
 }
 
 /// Loads the kernel image into memory and prepares its page tables

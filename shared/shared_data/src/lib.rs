@@ -3,11 +3,15 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod constants;
 mod trampoline;
 pub use constants::*;
 pub use trampoline::*;
 
+use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
 use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;
 use oncelock::OnceLock;
@@ -33,9 +37,20 @@ pub struct BootloaderState {
 
     /// Virtual address of the bootloader stack
     pub stack: VirtAddr,
+}
 
-    /// The physical memory map state
-    pub free_memory: RangeSet,
+// THESE ARE INVALID BECAUSE THEY'RE HEAP ALLOCATED
+
+/// APIC and NUMA related information
+pub struct ApicState {
+    /// The vector of all valid APICs on the system
+    pub valid: Vec<u32>,
+
+    /// APIC to memory domain mapping
+    pub apic_domains: BTreeMap<u32, u32>,
+
+    /// Memory domain to physical memory ranges mapping
+    pub memory_domains: BTreeMap<u32, RangeSet>,
 }
 
 /// Data structure shared between the kernel and the bootloader
@@ -69,6 +84,9 @@ pub struct Shared {
     /// A snapshot of the bootloader after the bootloader has been initialized
     /// to its permanent state.
     bootloader: OnceLock<BootloaderState>,
+
+    /// APIC and NUMA information parsed by the bootloader
+    apic: OnceLock<ApicState>,
 }
 
 impl Shared {
@@ -81,6 +99,7 @@ impl Shared {
             kernel_pt:    SpinLock::new(None),
             next_stack:   AtomicU64::new(KERNEL_STACK_BASE),
             bootloader:   OnceLock::new(),
+            apic:         OnceLock::new(),
         }
     }
 
@@ -107,5 +126,10 @@ impl Shared {
     /// Returns a reference to the base of the next stack
     pub fn stack(&self) -> &AtomicU64 {
         &self.next_stack
+    }
+
+    /// Returns a reference to the APIC and NUMA setup of the system
+    pub fn apic(&self) -> &OnceLock<ApicState> {
+        &self.apic
     }
 }
