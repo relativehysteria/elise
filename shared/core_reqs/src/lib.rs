@@ -39,7 +39,7 @@ pub unsafe extern "C" fn memcmp(s1: *mut u8, s2: *const u8, n: usize) -> i32 {
         let a = unsafe { *s1.offset(i as isize) };
         let b = unsafe { *s2.offset(i as isize) };
         if a != b {
-            return (a - b) as i32;
+            return a as i32 - b as i32;
         }
         i += 1;
     }
