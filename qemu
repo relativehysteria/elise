@@ -32,8 +32,7 @@ build_component "bootloader"
 # Start qemu with the bootloader image
 tftp="bootloader/target/x86_64-unknown-uefi/$target"
 ovmf="/usr/share/edk2-ovmf/OVMF_CODE.fd"
-#smp="4,cores=2,threads=1,sockets=2"
-smp="1,cores=1,threads=1,sockets=1"
+smp="4,cores=2,threads=1,sockets=2"
 mem_mb="4096"
 
 sudo qemu-system-x86_64 \
@@ -42,6 +41,10 @@ sudo qemu-system-x86_64 \
     -smp "$smp" \
     -nographic \
     -bios "$ovmf" \
+    -object memory-backend-ram,size=2048M,id=mem0 \
+    -object memory-backend-ram,size=2048M,id=mem1 \
+    -numa node,cpus=0-1,memdev=mem0 \
+    -numa node,cpus=2-3,memdev=mem1 \
     -device driver=e1000,netdev=net0 \
     -device driver=e1000,netdev=net1 \
     -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi \

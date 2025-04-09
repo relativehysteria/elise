@@ -316,7 +316,8 @@ pub unsafe fn init() -> Result<(), Error> {
 
         // Print out the table that we're reading right now
         if let Ok(sig) = core::str::from_utf8(&signature) {
-            println!("Got ACPI table: {sig}");
+            let table = Table::from_sig(&signature);
+            println!("Got ACPI table: {sig} | {table:?}");
         }
 
         // Parse the table
