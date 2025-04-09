@@ -10,15 +10,13 @@ mod trampoline;
 pub use constants::*;
 pub use trampoline::*;
 
-use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 use core::sync::atomic::AtomicU64;
 use spinlock::SpinLock;
 use oncelock::OnceLock;
 use serial::SerialDriver;
 use rangeset::RangeSet;
 use elf_parser::Elf;
-use page_table::{PageTable, VirtAddr};
+use page_table::{PageTable, VirtAddr, PhysAddr};
 
 #[derive(Debug, Clone)]
 /// Information about the state of the bootloader. All virtual addresses are
@@ -39,18 +37,14 @@ pub struct BootloaderState {
     pub stack: VirtAddr,
 }
 
-// THESE ARE INVALID BECAUSE THEY'RE HEAP ALLOCATED
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct SdtTable {
+    /// Number of SDTs in the SDT table
+    pub n_entries: usize,
 
-/// APIC and NUMA related information
-pub struct ApicState {
-    /// The vector of all valid APICs on the system
-    pub valid: Vec<u32>,
-
-    /// APIC to memory domain mapping
-    pub apic_domains: BTreeMap<u32, u32>,
-
-    /// Memory domain to physical memory ranges mapping
-    pub memory_domains: BTreeMap<u32, RangeSet>,
+    /// Unaligned physical address of the first SDT
+    pub base: PhysAddr,
 }
 
 /// Data structure shared between the kernel and the bootloader
@@ -81,12 +75,16 @@ pub struct Shared {
     /// The virtual address of the next available stack.
     next_stack: AtomicU64,
 
+    /// The table of other ACPI SDTs
+    ///
+    /// As dictated by the UEFI spec, we have to retrieve this pointer before we
+    /// exit the boot services, but because of memory constraints, we will parse
+    /// ACPI tables on the kernel side.
+    acpi_sdt: OnceLock<SdtTable>,
+
     /// A snapshot of the bootloader after the bootloader has been initialized
     /// to its permanent state.
     bootloader: OnceLock<BootloaderState>,
-
-    /// APIC and NUMA information parsed by the bootloader
-    apic: OnceLock<ApicState>,
 }
 
 impl Shared {
@@ -98,8 +96,8 @@ impl Shared {
             kernel_image: SpinLock::new(None),
             kernel_pt:    SpinLock::new(None),
             next_stack:   AtomicU64::new(KERNEL_STACK_BASE),
+            acpi_sdt:     OnceLock::new(),
             bootloader:   OnceLock::new(),
-            apic:         OnceLock::new(),
         }
     }
 
@@ -128,8 +126,8 @@ impl Shared {
         &self.next_stack
     }
 
-    /// Returns a reference to the APIC and NUMA setup of the system
-    pub fn apic(&self) -> &OnceLock<ApicState> {
-        &self.apic
+    /// Returns a reference to the root ACPI table as given by UEFI
+    pub fn acpi(&self) -> &OnceLock<SdtTable> {
+        &self.acpi_sdt
     }
 }

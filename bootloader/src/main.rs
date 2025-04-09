@@ -48,6 +48,7 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
             4096).unwrap()
         ).unwrap();
 
+
     // Initialize the SHARED struct and save it as global!
     let shared_ptr: *mut Shared = shared_addr.0 as *mut Shared;
     unsafe { shared_ptr.write(Shared::new()); }
@@ -71,6 +72,11 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
         core::arch::asm!("mov {}, rsp", out(reg) stack);
         stack
     });
+
+    // Retrieve the SDT table and save it
+    let sdt = unsafe { efi::acpi::get_sdt_table(system_table) }
+        .expect("Couldn't retrieve the SDT table.");
+    SHARED.get().acpi().set(sdt);
 
     // Take a snapshot of the bootloader in its current state and mark the
     // bootloader as initialized. This snapshot is what we'll return to when the

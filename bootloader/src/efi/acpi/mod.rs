@@ -1,7 +1,6 @@
 //! ACPI definitions
 
 pub mod acpi;
-pub mod apic;
 
 pub use acpi::*;
 
@@ -19,8 +18,4 @@ pub enum Error {
 
     /// Unexpected table checksum
     ChecksumMismatch(Table),
-
-    /// While parsing the memory proximity domain to physical memory ranges
-    /// affinity, the physical memory range was larger than a `usize`.
-    MemoryAffinityOverflow,
 }

@@ -12,6 +12,7 @@ pub type ImageHandle = Handle;
 /// the [`Status`] value using `from()`
 pub type RawStatus = isize;
 
+#[derive(Copy, Clone)]
 #[repr(transparent)]
 /// A pointer to the system table that was passed to our bootloader by UEFI.
 /// This struct exists only to take ownership of the pointer and to make it
