@@ -35,6 +35,9 @@ extern "sysv64" fn entry(core_id: u32) -> ! {
 
         // Initialize PCI devices and drivers
         unsafe { kernel::pci::init(); }
+
+        // Initialize NUMA information and bring up all APICs on the system
+        unsafe { kernel::acpi::init().expect("Couldn't parse ACPI tables"); }
     }
 
     panic!();

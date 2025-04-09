@@ -29,6 +29,7 @@ dependencies = [
  "cpu",
  "oncelock",
  "page_table",
+ "rangeset",
  "serial",
  "shared_data",
  "spinlock",

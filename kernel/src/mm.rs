@@ -56,6 +56,12 @@ impl PhysMem for PhysicalMemory {
     }
 }
 
+/// Offset a physical address into our physical window
+pub fn phys_ptr(addr: PhysAddr) -> VirtAddr {
+    VirtAddr(addr.0.checked_add(KERNEL_PHYS_WINDOW_BASE)
+        .expect("Overflow when offsetting into physical window"))
+}
+
 /// Find a free region of virtual memory that can hold `size` bytes and return
 /// its virtual address.
 ///
