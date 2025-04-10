@@ -270,29 +270,32 @@ impl RangeSet {
         Ok(true)
     }
 
-    /// Allocate `size` bytes of memory with `align` requirements.
+    /// Allocate `size` bytes of memory with `align` requirements, preferring to
+    /// allocate from `regions`.
     ///
     /// Returns the pointer to the allocated memory.
-    /// If the the arguments to the function caused an unsatisfiable allocation,
+    /// If the arguments to the function caused an unsatisfiable allocation,
     /// an error will be returned. If the allocation can't be satisfied for
     /// other reasons (i.e. there's not enough free memory), `Ok(None)` will be
     /// returned.
-    pub fn allocate(&mut self, size: u64, align: u64)
-            -> Result<Option<u64>, Error> {
+    pub fn allocate_prefer(
+        &mut self,
+        size: u64,
+        align: u64,
+        regions: Option<&RangeSet>
+    ) -> Result<Option<u64>, Error> {
         // Don't allow 0-sized allocations
         if size == 0 { return Err(Error::ZeroSizedAllocation); }
 
         // Check that we have an alignment with a power of 2
-        if align.count_ones() != 1 {
-            return Err(Error::WrongAlignment(align));
-        }
+        if align.count_ones() != 1 { return Err(Error::WrongAlignment(align)); }
 
         // Generate a mask for the alignment
         let align_mask = align - 1;
 
         // Go through each range and see if an allocation can fit into it
         let mut allocation = None;
-        for entry in self.entries() {
+        'search: for entry in self.entries() {
             // Calculate the padding
             let padding = (align - (entry.start & align_mask)) & align_mask;
 
@@ -309,6 +312,48 @@ impl RangeSet {
 
             // Make sure this entry is large enough for the allocation
             if end > entry.end { continue; }
+
+            // If there was a specific region the caller wanted to use,
+            // check if there is overlap with this region
+            if let Some(regions) = regions {
+                for region in regions.entries() {
+                    let overlap = match entry.overlaps(region) {
+                        None    => continue,
+                        Some(o) => o,
+                    };
+
+                    // Compute the rounded-up alignment from the
+                    // overlapping region
+                    let aligned = (overlap.start.wrapping_add(align_mask))
+                        & !align_mask;
+
+                    if aligned >= overlap.start &&
+                       aligned <= overlap.end  &&
+                       (overlap.end - aligned) >= (size - 1)
+                    {
+                        // Alignment did not cause an overflow AND
+                        // Alignment did not cause exceeding the end AND
+                        // Amount of aligned overlap can satisfy the
+                        // allocation
+
+                        // Compute the inclusive end of this proposed
+                        // allocation
+                        let alc_end = aligned + (size - 1);
+
+                        // Make sure the allocation fits in the current
+                        // addressable address space
+                        let max_addr = core::usize::MAX as u64;
+                        if aligned > max_addr || alc_end > max_addr {
+                            continue 'search;
+                        }
+
+                        // We know the allocation can be satisfied starting
+                        // at `aligned`
+                        allocation = Some((aligned, alc_end, aligned));
+                        break 'search;
+                    }
+                }
+            }
 
             // Compute the "best" allocation size to date
             let prev_size = allocation.map(|(start, end, _)| end - start);
@@ -327,5 +372,17 @@ impl RangeSet {
             // Return out the pointer!
             ptr
         }))
+    }
+
+    /// Allocate `size` bytes of memory with `align` requirements.
+    ///
+    /// Returns the pointer to the allocated memory.
+    /// If the arguments to the function caused an unsatisfiable allocation,
+    /// an error will be returned. If the allocation can't be satisfied for
+    /// other reasons (i.e. there's not enough free memory), `Ok(None)` will be
+    /// returned.
+    pub fn allocate(&mut self, size: u64, align: u64)
+            -> Result<Option<u64>, Error> {
+        self.allocate_prefer(size, align, None)
     }
 }

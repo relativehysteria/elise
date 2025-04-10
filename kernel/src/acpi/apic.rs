@@ -58,13 +58,14 @@ pub fn init(
 ) -> Result<(), Error> {
     // Register the APIC IDs to their memory domains and notify the memory
     // manager about the NUMA mappings
-    if let (Some(ad), Some(_md)) = (apic_domains, mem_domains) {
+    if let (Some(ad), Some(md)) = (apic_domains, mem_domains) {
         ad.iter().for_each(|(&apic, &domain)| {
             APIC_TO_MEM_DOMAIN[apic as usize]
                 .store(domain, Ordering::Relaxed);
         });
 
-        // TODO: Notify the memory manager about the NUMA mappings
+        // Inform the memory allocator of our NUMA mappings
+        unsafe { crate::mm::register_numa(ad, md); }
     }
 
     // Initialize the state of all functional APICs

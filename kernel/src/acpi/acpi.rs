@@ -9,7 +9,6 @@ use core::mem::size_of;
 use core::ptr::read_unaligned;
 
 use rangeset::{ RangeSet, Range };
-use shared_data::KERNEL_PHYS_WINDOW_BASE;
 use page_table::PhysAddr;
 use crate::acpi::Error;
 use crate::acpi::apic;
@@ -334,8 +333,8 @@ pub unsafe fn init() -> Result<(), Error> {
         }
     }
 
-    // // Initialize the APIC states and NUMA topologies
-    // apic::init(apics, apic_domains, mem_domains)?;
+    // Initialize the APIC states and NUMA topologies
+    apic::init(apics, apic_domains, mem_domains)?;
 
     Ok(())
 }

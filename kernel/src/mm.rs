@@ -1,59 +1,65 @@
 //! Kernel memory allocation routines and structures
 
+use alloc::boxed::Box;
+use core::mem::MaybeUninit;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::alloc::{GlobalAlloc, Layout};
+use oncelock::OnceLock;
 use page_table::{
     PhysMem, PhysAddr, VirtAddr, MapRequest, Permissions, PageType};
 use shared_data::{
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE, KERNEL_VMEM_BASE};
+use rangeset::RangeSet;
+use crate::acpi::apic::{ApicDomains, MemoryDomains, MAX_CORES};
 
-#[repr(transparent)]
-/// Wrapper around a rangeset that implemente the `PhysMem` trait
+/// Represents a mapping from APIC IDs to optional memory range sets for NUMA
+/// nodes.
 ///
-/// The bootloader should have created a physical window in our memory map for
-/// our memory allocation needs
-pub struct PhysicalMemory;
+/// Each index in the array corresponds to a logical core (by APIC ID), and the
+/// associated `Option<RangeSet>` contains the memory ranges (if any) assigned
+/// to the NUMA node associated with that APIC ID. If a particular core has no
+/// associated memory range, the entry will be `None`.
+type ApicToMemRange = [Option<RangeSet>; MAX_CORES];
 
-impl PhysMem for PhysicalMemory {
-    unsafe fn translate(&mut self, paddr: PhysAddr, size: usize)
-            -> Option<*const u8> {
-        unsafe { self.translate_mut(paddr, size).map(|x| x as *const u8) }
+/// Mappings of APIC IDs to their NUMA node memory ranges
+static APIC_TO_MEM_RANGE: OnceLock<&'static ApicToMemRange> = OnceLock::new();
+
+/// Get the preferred memory range for the currently running APIC.
+/// Returns none if there's no valid APIC ID or we have no knowledge of NUMA.
+pub fn mem_range<'a>() -> Option<&'a RangeSet> {
+    // If the mapping wasn't initialized yet, bail out
+    if !APIC_TO_MEM_RANGE.initialized() { return None; }
+
+    // Get the mapping
+    let mapping = APIC_TO_MEM_RANGE.get();
+
+    // Look up and return the preferred memory range
+    unsafe { core!().apic_id().and_then(|x| mapping[x as usize].as_ref()) }
+}
+
+/// Registers NUMA mappings with the allocator. From this call on, all
+/// allocations will be NUMA aware.
+pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
+    // Create a heap-based database
+    let mut mappings: Box<MaybeUninit<ApicToMemRange>> = Box::new_uninit();
+
+    // Initialize the memory
+    for core in 0..MAX_CORES {
+        let foo = mappings.as_mut_ptr() as *mut Option<RangeSet>;
+        unsafe { core::ptr::write(foo.offset(core as isize), None); }
     }
 
-    unsafe fn translate_mut(&mut self, paddr: PhysAddr, size: usize)
-            -> Option<*mut u8> {
-        // Compute the ending physical address and make sure we don't overflow
-        let end = (size as u64).checked_sub(1)?.checked_add(paddr.0)?;
+    // Mark the mappings as initialized
+    let mut mappings = unsafe { mappings.assume_init() };
 
-        // Make sure this physical address fits inside our physical window
-        if end >= KERNEL_PHYS_WINDOW_SIZE { return None; }
+    // Go through each APIC to domain mapping and store it in the database
+    ad.iter().for_each(|(&apic, domain)| {
+        mappings[apic as usize] = md.remove(domain).and_then(|rs| Some(rs))
+    });
 
-        // Convert the physical address into a linear address
-        Some((paddr.0 + KERNEL_PHYS_WINDOW_BASE) as *mut u8)
-    }
-
-    fn alloc_phys(&mut self, layout: Layout) -> Option<PhysAddr> {
-        // If someone wants to allocate a 4-KiB page from physical memory,
-        // use our free lists
-        if layout.size() == 4096 && layout.align() == 4096 {
-            unsafe {
-                let ptr = core!().free_list(layout).lock().pop();
-                Some(PhysAddr(ptr as u64 - KERNEL_PHYS_WINDOW_BASE))
-            }
-        } else {
-            // Get access to physical memory
-            let mut phys_mem = core!().shared.free_memory().lock();
-            let phys_mem = phys_mem.as_mut()?;
-
-            // Allocate directly from physical memory
-            // TODO: NUMA
-            let allocation = phys_mem
-                .allocate(layout.size() as u64, layout.align() as u64)
-                .ok().flatten()?;
-            Some(PhysAddr(allocation))
-        }
-    }
+    // Store the apic mapping database as global!
+    unsafe { APIC_TO_MEM_RANGE.set(&*Box::into_raw(mappings)) };
 }
 
 /// Offset a physical address into our physical window
@@ -107,6 +113,55 @@ pub fn slice_phys_mut<'a>(paddr: PhysAddr, size: u64) -> &'a mut [u8] {
     unsafe {
         core::slice::from_raw_parts_mut(
             (KERNEL_PHYS_WINDOW_BASE + paddr.0) as *mut u8, size as usize)
+    }
+}
+
+
+/// Wrapper around a rangeset that implemente the `PhysMem` trait
+///
+/// The bootloader should have created a physical window in our memory map for
+/// our memory allocation needs
+pub struct PhysicalMemory;
+
+impl PhysMem for PhysicalMemory {
+    unsafe fn translate(&mut self, paddr: PhysAddr, size: usize)
+            -> Option<*const u8> {
+        unsafe { self.translate_mut(paddr, size).map(|x| x as *const u8) }
+    }
+
+    unsafe fn translate_mut(&mut self, paddr: PhysAddr, size: usize)
+            -> Option<*mut u8> {
+        // Compute the ending physical address and make sure we don't overflow
+        let end = (size as u64).checked_sub(1)?.checked_add(paddr.0)?;
+
+        // Make sure this physical address fits inside our physical window
+        if end >= KERNEL_PHYS_WINDOW_SIZE { return None; }
+
+        // Convert the physical address into a linear address
+        Some((paddr.0 + KERNEL_PHYS_WINDOW_BASE) as *mut u8)
+    }
+
+    fn alloc_phys(&mut self, layout: Layout) -> Option<PhysAddr> {
+        // If someone wants to allocate a 4-KiB page from physical memory,
+        // use our free lists
+        if layout.size() == 4096 && layout.align() == 4096 {
+            unsafe {
+                let ptr = core!().free_list(layout).lock().pop();
+                Some(PhysAddr(ptr as u64 - KERNEL_PHYS_WINDOW_BASE))
+            }
+        } else {
+            // Get access to physical memory
+            let mut phys_mem = core!().shared.free_memory().lock();
+            let phys_mem = phys_mem.as_mut()?;
+
+            // Allocate directly from physical memory
+            let size = layout.size() as u64;
+            let align = layout.align() as u64;
+            let allocation = phys_mem
+                .allocate_prefer(size, align, mem_range())
+                .ok().flatten()?;
+            Some(PhysAddr(allocation))
+        }
     }
 }
 
@@ -173,8 +228,7 @@ impl FreeList {
             let mut phys_mem = core!().shared.free_memory().lock();
             let phys_mem = phys_mem.as_mut().unwrap();
 
-            // TODO: NUMA implementation for the rangeset
-            phys_mem.allocate(4096, 4096)
+            phys_mem.allocate_prefer(4096, 4096, mem_range())
                 .ok().flatten()
                 .expect("Failed to allocate physical memory") as u64
         };
@@ -322,7 +376,7 @@ impl FreeList {
 /// Handler for allocation errors, likely OOMs;
 /// simply panic, notifying that we can't satisfy the allocation
 fn alloc_error(_layout: Layout) -> ! {
-    panic!("ALlocation error!");
+    panic!("Allocation error!");
 }
 
 // TODO: document when NUMA and per-core free lists are implemented

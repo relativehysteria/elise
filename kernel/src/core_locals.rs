@@ -89,6 +89,13 @@ impl CoreLocals {
             x @ _       => Some(x),
         }
     }
+
+    /// Get the preferred memory range for the currently running core.
+    /// Returns `None` if there's no valid APIC ID or we have no knowledge of
+    /// NUMA.
+    pub fn mem_range<'a>(&self) -> Option<&'a rangeset::RangeSet> {
+        crate::mm::mem_range()
+    }
 }
 
 /// Returns a reference to current core locals
