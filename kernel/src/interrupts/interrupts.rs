@@ -140,19 +140,23 @@ pub fn init() {
         Vec::with_capacity(32 * 1024));
     tss.ist[0] = crit_stack.as_ptr() as u64 + crit_stack.capacity() as u64;
 
-    // Create a kernel GDT; TODO: save the bootloader GDT
-    // If you ever move the kernel code segment from 0x8, don't forget to update
-    // the IDT entries below
+    // Create a kernel GDT. Since the bootloader is in long mode, we should be
+    // able to use the kernel GDT with the bootloader as well.
+    // If you ever change anything, don't forget to update the IDT entries below
     let mut gdt: Vec<u64> = vec![
         0x0000000000000000, // 0x00 | null
-        0x00209a0000000000, // 0x08 | 64-bit, present, code, base 0
-        0x0000920000000000, // 0x10 | 64-bit, present, data, base 0
+        0x00009A008000FFFF, // 0x08 | 16-bit, present, code, base 0x8000
+        0x000092000000FFFF, // 0x10 | 16-bit, present, data, base 0
+        0x00cF9A000000FFFF, // 0x18 | 32-bit, present, code, base 0
+        0x00CF92000000FFFF, // 0x20 | 32-bit, present, data, base 0
+        0x00209A0000000000, // 0x28 | 64-bit, present, code, base 0
+        0x0000920000000000, // 0x30 | 64-bit, present, data, base 0
     ];
 
     // Create the task pointer in the GDT
     let tss_base = &*tss as *const Tss as u64;
-    let tss_low = 0x890000000000 | (((tss_base >> 24) & 0xff) << 56) |
-        ((tss_base & 0xffffff) << 16) |
+    let tss_low = 0x890000000000 | (((tss_base >> 24) & 0xFF) << 56) |
+        ((tss_base & 0xFFFFFF) << 16) |
         (core::mem::size_of::<Tss>() as u64 - 1);
     let tss_high = tss_base >> 32;
 
@@ -201,7 +205,7 @@ pub fn init() {
 
         // Construct the IDT entry pointing to the default handler
         idt.push(IdtEntry::new(
-            0x08,               // Kernel code segment in the GDT
+            0x28,               // Kernel code segment in the GDT
             handler_addr,       // Address of the handler for all interrupts
             ist,                // IST index
             X64_INTERRUPT_GATE, // Type (interrupt gate)
@@ -213,7 +217,7 @@ pub fn init() {
     assert!(core::mem::size_of_val(&idt[..]) == 4096);
 
     // Load the idt
-    let idt_ptr = TablePtr::new(0xfff, idt.as_ptr() as u64);
+    let idt_ptr = TablePtr::new(0xFFF, idt.as_ptr() as u64);
     unsafe {
         asm!(
             "lidt [{0}]", in(reg) &idt_ptr as *const TablePtr,

@@ -25,8 +25,8 @@ extern "sysv64" fn entry(core_id: u32) -> ! {
     // Initialize the interrupts
     kernel::interrupts::init();
 
-    // // Initialize the APIC
-    // unsafe { kernel::apic::init(); }
+    // Initialize the APIC
+    unsafe { kernel::apic::init(); }
 
     // BSP routines; one time initialization for the kernel
     if kernel::core!().id == 0 {

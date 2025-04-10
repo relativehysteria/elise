@@ -14,8 +14,9 @@ const IA32_APIC_BASE_EN: u64 = 1 << 11;
 /// The intel specified APIC MSR
 const IA32_APIC_BASE: u32 = 0x1B;
 
-/// The physical address we want the local APIC to be mapped at
-const APIC_BASE: u64 = 0x0;
+/// The physical address we want the local APIC to be mapped at. This should be
+/// the standard base unless someone relocated it..
+const APIC_BASE: u64 = 0xFEE0_0000;
 
 /// Local APIC
 pub struct Apic {
@@ -29,7 +30,7 @@ pub struct Apic {
 impl Apic {
     /// Get the APIC ID of the current running core
     pub fn id(&self) -> u32 {
-        let apic_id = unsafe { self.read_apic(Register::ApicId) };
+        let apic_id = unsafe { self.read(Register::ApicId) };
 
         match &self.mode {
             ApicMode::Apic(_) => apic_id >> 24,
@@ -38,7 +39,7 @@ impl Apic {
     }
 
     /// Read a value from the given APIC `register`
-    pub unsafe fn read_apic(&self, register: Register) -> u32 {
+    pub unsafe fn read(&self, register: Register) -> u32 {
         let offset = register as usize;
 
         unsafe {
@@ -47,14 +48,14 @@ impl Apic {
                     core::ptr::read_volatile(&mapping[offset / 4])
                 },
                 ApicMode::X2Apic => {
-                    cpu::rdmsr(0x88 + (offset as u32 / 16)) as u32
+                    cpu::rdmsr(0x800 + (offset as u32 / 16)) as u32
                 },
             }
         }
     }
 
     /// Write a `value` to the given APIC `register`
-    pub unsafe fn write_apic(&mut self, register: Register, value: u32) {
+    pub unsafe fn write(&mut self, register: Register, value: u32) {
         let offset = register as usize;
 
         unsafe {
@@ -64,6 +65,42 @@ impl Apic {
                 },
                 ApicMode::X2Apic => {
                     cpu::wrmsr(0x800 + (offset as u32 / 16), value as u64);
+                }
+            }
+        }
+    }
+
+    /// Send a raw inter-processor interrupt to a specific APIC ID
+    /// It is up to the caller to make sure the `dest_id` is a valid APIC ID and
+    /// the IPI is a valid IPI type/format.
+    pub unsafe fn ipi(&mut self, dest_id: u32, ipi: u32) {
+        // Convert the destination APIC ID into the correct location based on
+        // the APIC mode
+        let dest_id = match &self.mode {
+            ApicMode::Apic(_) => dest_id << 24,
+            ApicMode::X2Apic  => dest_id,
+        };
+
+        // Construct the IPI command and send it!
+        unsafe { self.write_icr(((dest_id as u64) << 32) | ipi as u64); }
+    }
+
+    /// Write a value to the APIC's ICR
+    unsafe fn write_icr(&mut self, val: u64) {
+        unsafe {
+            match &mut self.mode {
+                ApicMode::Apic(mapping) => {
+                    // Write the high part
+                    core::ptr::write_volatile(&mut mapping[0x310 / 4],
+                                              (val >> 32) as u32);
+
+                    // Write the low part, causing the interrupt to be sent
+                    core::ptr::write_volatile(&mut mapping[0x300 / 4],
+                                              (val >>  0) as u32);
+                }
+                ApicMode::X2Apic => {
+                    // Write the entire 64-bit value in one shot
+                    cpu::wrmsr(0x830, val);
                 }
             }
         }
@@ -274,20 +311,18 @@ pub unsafe fn init() {
     };
 
     // Save the original SVR
-    apic.orig.svr = unsafe {
-        apic.read_apic(Register::SpuriousInterruptVector)
-    };
+    apic.orig.svr = unsafe { apic.read(Register::SpuriousInterruptVector) };
 
     // Save the original timer state
     apic.orig.timer = TimerState {
-        dcr: unsafe { apic.read_apic(Register::DivideConfiguration) },
-        icr: unsafe { apic.read_apic(Register::InitialCount) },
-        lvt: unsafe { apic.read_apic(Register::LvtTimer) },
+        dcr: unsafe { apic.read(Register::DivideConfiguration) },
+        icr: unsafe { apic.read(Register::InitialCount) },
+        lvt: unsafe { apic.read(Register::LvtTimer) },
     };
 
     // Enable the APIC, set spurious interrupt vector to 0xFF
     unsafe {
-        apic.write_apic(Register::SpuriousInterruptVector, (1 << 8) | 0xFF);
+        apic.write(Register::SpuriousInterruptVector, (1 << 8) | 0xFF);
     }
 
     // Set the core's APIC id and reference
