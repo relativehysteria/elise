@@ -10,7 +10,7 @@ mod trampoline;
 pub use constants::*;
 pub use trampoline::*;
 
-use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use spinlock::SpinLock;
 use oncelock::OnceLock;
 use serial::SerialDriver;
@@ -19,6 +19,7 @@ use elf_parser::Elf;
 use page_table::{PageTable, VirtAddr, PhysAddr};
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 /// Information about the state of the bootloader. All virtual addresses are
 /// only valid within the bootloader page table.
 ///
@@ -49,6 +50,9 @@ pub struct SdtTable {
 
 /// Data structure shared between the kernel and the bootloader
 pub struct Shared {
+    /// Whether the kernel is rebooting completely
+    pub rebooting: AtomicBool,
+
     /// The serial driver that can be used by the kernel and the bootloader to
     /// print messages through the serial ports
     pub serial: SpinLock<Option<SerialDriver>>,
@@ -91,6 +95,7 @@ impl Shared {
     /// Creates an empty structure for shared data
     pub const fn new() -> Self {
         Self {
+            rebooting:    AtomicBool::new(true),
             serial:       SpinLock::new(None),
             free_memory:  SpinLock::new(None),
             kernel_image: SpinLock::new(None),
@@ -129,5 +134,9 @@ impl Shared {
     /// Returns a reference to the root ACPI table as given by UEFI
     pub fn acpi(&self) -> &OnceLock<SdtTable> {
         &self.acpi_sdt
+    }
+
+    pub fn is_rebooting(&self) -> bool {
+        self.rebooting.load(Ordering::SeqCst)
     }
 }

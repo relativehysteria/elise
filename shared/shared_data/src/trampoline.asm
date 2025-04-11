@@ -10,9 +10,6 @@ global .trampoline
     ;   rsi = stack
     ;   rdx = table
 
-    ; The following arguments are required when jumping to the kernel:
-    ;   rcx = core_id
-
     ; Don't interrupt mid change
     cli
 
@@ -24,11 +21,6 @@ global .trampoline
 
     ; Save the entry point before we jump to it
     mov rax, rdi
-
-    ; Set up the _kernel_ arguments before the jump.
-    ; The bootloader takes no arguments so if we're jumping to the bootloader,
-    ; this doesn't do anything
-    mov rdi, rcx ; core_id
 
     ; Jump to the entry point
     call rax

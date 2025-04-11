@@ -13,18 +13,20 @@ build_component() {
     [ $build_status -ne 0 ] && echo "$dir build failed" && exit 1
 }
 
-build_trampoline() {
+build_trampolines() {
     # If this is the first run, the target directory won't be created yet
     mkdir -p "bootloader/target"
+    mkdir -p "kernel/target"
     nasm -f bin -o "bootloader/target/trampoline.bin" "shared/shared_data/src/trampoline.asm" || exit 1
+    nasm -f bin -o "kernel/target/apic_entry.bin" "kernel/src/acpi/apic_entry.asm" || exit
 }
+
+# Build the trampolines
+build_trampolines
 
 # Build the kernel and copy it to where the bootloader expects it
 build_component "kernel"
 cp "kernel/target/x86_64-unknown-linux-gnu/$target/kernel" "kernel/target/kernel.bin" || exit 1
-
-# Build the trampoline code
-build_trampoline
 
 # Build the bootloader
 build_component "bootloader"

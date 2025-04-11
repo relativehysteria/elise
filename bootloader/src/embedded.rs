@@ -16,6 +16,6 @@ pub static INITIAL_KERNEL_IMAGE: &'static [u8] = include_bytes!(
 pub static TRAMPOLINE: &'static [u8] =
     include_bytes!("../target/trampoline.bin");
 
-// Make sure the trampoline is too large
+// Make sure the trampoline isn't too large
 const_assert::const_assert!(
     (TRAMPOLINE.len() as u64) < shared_data::MAX_TRAMPOLINE_SIZE);

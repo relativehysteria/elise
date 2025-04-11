@@ -193,6 +193,23 @@ fn load_kernel() {
     }
     println!();
 
+    // Map the trampoline in as well. First, make sure it's been mapped into
+    // physical memory already
+    let trampoline_raw = trampoline::RAW_PT_ENTRY.load(Ordering::SeqCst);
+    if trampoline_raw == 0 {
+        panic!("The trampoline hasn't been mapped in yet!");
+    }
+
+    // Then map the raw page table entry into the kernel page table
+    unsafe {
+        table.map_raw(
+            &mut pmem,
+            VirtAddr(shared_data::TRAMPOLINE_ADDR),
+            PageType::Page4K,
+            trampoline_raw)
+        .expect("Failed to map in the raw trampoline page table entry");
+    }
+
     // Map in the physical memory window
     //
     // First, get CPU features to know which pages we can use
@@ -226,8 +243,8 @@ fn load_kernel() {
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
 /// jumps to the kernel!
 unsafe fn jump_to_kernel() {
-    // Map in the trampoline in the kernel page table and get a pointer to it
-    let trampoline = unsafe { bootloader::trampoline::prepare().unwrap() };
+    // Get the pointer to the trampoline
+    let trampoline = unsafe { shared_data::get_trampoline() };
 
     // Get the kernel entry point, page table and stack addresses
     let entry = SHARED.get().kernel_image().lock().as_ref().unwrap().entry;
@@ -244,24 +261,32 @@ unsafe fn jump_to_kernel() {
     println!(" ├ stack:  {:X?}", stack);
     println!(" └ table:  {:X?}", table);
 
-    unsafe { trampoline(entry, stack, table, 0); }
+    unsafe { trampoline(entry, stack, table); }
 }
 
+/// This is the entry point for both the bootloader itself (the one that UEFI
+/// passes execution to) and for all of the cores on the system when the kernel
+/// brings them up (at which point the arguments of this function won't be used)
 #[unsafe(no_mangle)]
 unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
-                       system_table: efi::SystemTablePtr) {
+                              system_table: efi::SystemTablePtr) {
     // One time bootloader initialization. If the bootloader was set up already,
     // restore to physical memory to the snapshot we took on initialization
-    if init_setup(image_handle, system_table) {
+    if init_setup(image_handle, system_table) && SHARED.get().is_rebooting() {
         unsafe { restore_physical_memory(); }
+    }
+
+    // If we're rebooting, load the kernel into memory. The `rebooting` variable
+    // is initialized as `true`, so if the bootloader runs for the first time,
+    // this path will be hit
+    if SHARED.get().is_rebooting() {
+        load_kernel();
+        SHARED.get().rebooting.store(false, Ordering::SeqCst);
     }
 
     // From now on, due to `restore_physical_memory()`, all bootloader virtual
     // mappings are locked in and no more must be done. We are still free to
     // use physical memory when doing kernel mappings and such.
-
-    // Load the kernel image into memory
-    load_kernel();
 
     // Set up the trampoline to the kernel and jump to it
     unsafe { jump_to_kernel() };

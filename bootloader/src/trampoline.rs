@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 use page_table::{VirtAddr, PageTable, PageType, MapRequest, Permissions};
-use shared_data::{TRAMPOLINE_ADDR, Trampoline, get_trampoline};
+use shared_data::TRAMPOLINE_ADDR;
 use crate::SHARED;
 
 /// The raw page table entry for the trampoline. This entry can be used to map
@@ -8,7 +8,7 @@ use crate::SHARED;
 /// memory.
 ///
 /// `0` means uninitialized.
-static RAW_PT_ENTRY: AtomicU64 = AtomicU64::new(0);
+pub static RAW_PT_ENTRY: AtomicU64 = AtomicU64::new(0);
 
 /// Maps the trampoline into the current page table and sets [`RAW_PT_ENTRY`] to
 /// the raw page table entry of the mapping. Does nothing if the trampoline has
@@ -60,34 +60,4 @@ pub fn map_once() {
         .expect("Couldn't get the trampoline page table mapping components")
         .page.expect("Couldn't get the raw page entry for the trampoline").2;
     RAW_PT_ENTRY.store(raw, Ordering::SeqCst);
-}
-
-/// Maps the trampoline in the kernel's page table and returns a pointer to it.
-///
-/// Returns `None` if the trampoline wasn't mapped into physical memory using
-/// `map_once()` before this call.
-pub unsafe fn prepare() -> Option<Trampoline> {
-    // Get the trampoline raw page table entry
-    let trampoline_raw = RAW_PT_ENTRY.load(Ordering::SeqCst);
-    if trampoline_raw == 0 { return None; }
-
-    // Acquire exclusive access to physical memory
-    let mut pmem = SHARED.get().free_memory().lock();
-    let pmem = pmem.as_mut().expect("Memory still uninitialized.");
-    let mut pmem = crate::mm::PhysicalMemory(pmem);
-
-    // Map in the raw trampoline page entry in the kernel page table
-    let mut table = SHARED.get().kernel_pt().lock();
-    let table = table.as_mut().expect("Kernel table uninitialized");
-
-    unsafe {
-        table.map_raw(
-            &mut pmem,
-            VirtAddr(TRAMPOLINE_ADDR),
-            PageType::Page4K, trampoline_raw
-        ).expect("Failed ot map in the raw trampoline page table entry");
-    }
-
-    // Return the function pointer
-    Some(unsafe { get_trampoline() })
 }

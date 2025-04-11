@@ -24,5 +24,5 @@ pub unsafe fn soft_reboot() -> ! {
 
     // Get the bootloader state and jump to the bootloader
     let bstate = core!().shared.bootloader().get();
-    unsafe { tramp(bstate.entry, bstate.stack, bstate.page_table.clone(), 0) };
+    unsafe { tramp(bstate.entry, bstate.stack, bstate.page_table.clone()) };
 }

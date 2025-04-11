@@ -6,7 +6,6 @@ pub type Trampoline = unsafe extern "sysv64" fn(
     entry: VirtAddr,
     stack: VirtAddr,
     table: PageTable,
-    core_id: u32,
 ) -> !;
 
 /// Returns a pointer to the trampoline.
