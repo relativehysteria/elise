@@ -42,13 +42,13 @@ impl<T> OnceLock<T> {
         unsafe { &*(*self.value.get()).as_ptr() }
     }
 
+    #[track_caller]
     /// Initializes the value in this lock.
     ///
     /// Panics if the value has been set already.
     pub fn set(&self, value: T) {
-        if self.initialized.swap(true, Ordering::SeqCst) {
-            panic!("OnceLock is already initialized");
-        }
+        assert!(!self.initialized.swap(true, Ordering::SeqCst),
+            "OnceLock is already initialized");
 
         unsafe { (*self.value.get()).as_mut_ptr().write(value); }
     }
