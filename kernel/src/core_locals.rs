@@ -4,7 +4,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::alloc::Layout;
 use page_table::VirtAddr;
-use shared_data::{Shared, KERNEL_SHARED_BASE};
+use shared_data::Shared;
 use spinlock::SpinLock;
 use crate::mm::FreeList;
 use crate::interrupts::Interrupts;
@@ -12,6 +12,9 @@ use crate::apic::Apic;
 
 /// The value in `CoreLocals.apic_id` if the APIC is uninitialized
 const APIC_UNINIT: u32 = u32::MAX;
+
+/// The cumulative variable used for allocating core IDs
+static NEXT_CORE_ID: AtomicU32 = AtomicU32::new(0);
 
 #[allow(dead_code)]
 #[repr(C)]
@@ -120,9 +123,13 @@ pub fn get_core_locals() -> &'static CoreLocals {
 }
 
 /// Initialize the core locals for this core
-pub fn init(core_id: u32) {
-    // Get a reference to the SHARED structure
-    let shared = unsafe { &*(KERNEL_SHARED_BASE as *const Shared) };
+pub fn init(shared: *const Shared) {
+    // Allocate an ID for this core
+    let core_id = NEXT_CORE_ID.fetch_add(1, Ordering::SeqCst);
+
+    // Offset the SHARED pointer into our physical window and get its reference
+    let shared = crate::mm::phys_ptr(page_table::PhysAddr(shared as u64));
+    let shared = unsafe { &*(shared.0 as *const Shared) };
 
     // Allocate space for the core locals
     let core_locals_ptr = {

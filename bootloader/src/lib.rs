@@ -13,7 +13,5 @@ mod embedded;
 pub use embedded::INITIAL_KERNEL_IMAGE;
 pub use embedded::TRAMPOLINE;
 
-use oncelock::OnceLock;
-
 /// Data shared between the bootloader and the kernel
-pub static SHARED: OnceLock<&'static shared_data::Shared> = OnceLock::new();
+pub static SHARED: shared_data::Shared = shared_data::Shared::new();

@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 
-use core::sync::atomic::{AtomicU32, Ordering};
-
 #[inline]
 fn header(core_id: u32) {
     let header =
@@ -13,15 +11,12 @@ r#"
     kernel::println!("{header} {core_id:X}");
 }
 
-/// The cumulative variable used for allocating core IDs
-static NEXT_CORE_ID: AtomicU32 = AtomicU32::new(0);
-
 #[unsafe(export_name="_start")]
-extern "sysv64" fn entry() -> ! {
+extern "sysv64" fn entry(shared: *const shared_data::Shared) -> ! {
     // This is the kernel entry point for all cores on the system
 
     // Initialize core locals
-    kernel::core_locals::init(NEXT_CORE_ID.fetch_add(1, Ordering::SeqCst));
+    kernel::core_locals::init(shared);
 
     // Print the kernel header
     header(kernel::core!().id);

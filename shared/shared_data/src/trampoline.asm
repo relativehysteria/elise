@@ -5,10 +5,11 @@
 
 global .trampoline
 .trampoline:
-    ; The following arguments are required for the trampoline:
+    ; The trampoline has the following arguments
     ;   rdi = entry
     ;   rsi = stack
     ;   rdx = table
+    ;   rcx = shared data structure pointer
 
     ; Don't interrupt mid change
     cli
@@ -21,6 +22,9 @@ global .trampoline
 
     ; Save the entry point before we jump to it
     mov rax, rdi
+
+    ; Pass through the rest of the arguments
+    mov rdi, rcx
 
     ; Jump to the entry point
     call rax

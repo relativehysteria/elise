@@ -22,7 +22,12 @@ pub unsafe fn soft_reboot() -> ! {
     // Get the trampoline pointer
     let tramp = unsafe { shared_data::get_trampoline() };
 
+    let shared = core!().shared as *const shared_data::Shared;
+
     // Get the bootloader state and jump to the bootloader
     let bstate = core!().shared.bootloader().get();
-    unsafe { tramp(bstate.entry, bstate.stack, bstate.page_table.clone()) };
+
+    unsafe {
+        tramp(bstate.entry, bstate.stack, bstate.page_table.clone(), shared)
+    };
 }

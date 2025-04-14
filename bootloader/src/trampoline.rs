@@ -33,7 +33,7 @@ pub fn map_once() {
     let init = |offset| trampoline.get(offset as usize).copied().unwrap_or(0);
 
     // Acquire exclusive access to physical memory
-    let mut pmem = SHARED.get().free_memory().lock();
+    let mut pmem = SHARED.free_memory().lock();
     let pmem = pmem.as_mut().expect("Memory still uninitialized.");
     let mut pmem = crate::mm::PhysicalMemory(pmem);
 

@@ -12,13 +12,6 @@ macro_rules! is_1g_aligned {
     }
 }
 
-/// Macro that rounds a value up to the nearest multiple of a given alignment.
-macro_rules! ceil_align {
-    ($val:expr, $align:expr) => {
-        floor_align!($val + $align - 1, $align)
-    }
-}
-
 /// Macro that rounds a value down to the nearest multiple of a given alignment.
 macro_rules! floor_align {
     ($val:expr, $align:expr) => {
@@ -40,10 +33,6 @@ macro_rules! floor_align {
 /// This is the value in kernel/.cargo/config.toml
 pub const KERNEL_CODE_BASE: u64 = 0xFFFF_FFFF_CAFE_0000;
 
-/// The base at which the SHARED data structure will be loaded
-pub const KERNEL_SHARED_BASE: u64 =
-    KERNEL_CODE_BASE - ceil_align!(size_of::<crate::Shared>() as u64, 0x1000);
-
 /// The base address to use for the trampoline code that is present both in the
 /// bootloader and in the kernel page tables.
 ///
@@ -51,7 +40,7 @@ pub const KERNEL_SHARED_BASE: u64 =
 /// between the bootloader and the kernel (such that the bootloader can jump to
 /// the kernel and the kernel to the bootloader).
 pub const TRAMPOLINE_ADDR: u64 =
-    KERNEL_SHARED_BASE - (REGION_PADDING + MAX_TRAMPOLINE_SIZE);
+    KERNEL_CODE_BASE - (REGION_PADDING + MAX_TRAMPOLINE_SIZE);
 
 /// This is the maximum size in bytes we allow the trampoline code to be;
 pub const MAX_TRAMPOLINE_SIZE: u64 = 0x10_000;
@@ -92,7 +81,6 @@ pub const KERNEL_STACK_SIZE_PADDED: u64 = KERNEL_STACK_SIZE + REGION_PADDING;
 
 // Validate all of the constants
 is_4k_aligned!(KERNEL_CODE_BASE);
-is_4k_aligned!(KERNEL_SHARED_BASE);
 is_4k_aligned!(TRAMPOLINE_ADDR);
 is_4k_aligned!(KERNEL_STACK_BASE);
 is_4k_aligned!(KERNEL_STACK_SIZE_PADDED);

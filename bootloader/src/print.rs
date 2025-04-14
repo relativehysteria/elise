@@ -6,7 +6,7 @@ pub struct Serial;
 
 impl Write for Serial {
     fn write_str(&mut self, string: &str) -> core::fmt::Result {
-        let mut serial = SHARED.get().serial.lock();
+        let mut serial = SHARED.serial.lock();
         if let Some(serial) = &mut *serial {
             serial.write(string.as_bytes());
         }
@@ -21,7 +21,7 @@ pub struct SerialShatter;
 impl Write for SerialShatter {
     fn write_str(&mut self, string: &str) -> core::fmt::Result {
         unsafe {
-            let serial = SHARED.get().serial.shatter();
+            let serial = SHARED.serial.shatter();
             if let Some(serial) = &mut *serial {
                 serial.write(string.as_bytes());
             }
