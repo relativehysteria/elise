@@ -93,6 +93,7 @@ impl<T, I: InterruptState> SpinLock<T, I> {
 }
 
 impl<T: ?Sized, I: InterruptState> SpinLock<T, I> {
+    #[track_caller]
     /// Acquire exclusive access to the variable guarded by this spinlock
     pub fn lock(&self) -> SpinLockGuard<T, I> {
         // Make sure we don't use a non-preemptable lock during an interrupt.
