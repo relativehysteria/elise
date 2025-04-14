@@ -1,6 +1,8 @@
 //! Kernel panic handler and soft reboot routines
 
 use core::panic::PanicInfo;
+use crate::core_locals::InterruptLock;
+use shared_data::Shared;
 
 #[panic_handler]
 /// This is the panic routine used by rust within our kernel
@@ -22,7 +24,8 @@ pub unsafe fn soft_reboot() -> ! {
     // Get the trampoline pointer
     let tramp = unsafe { shared_data::get_trampoline() };
 
-    let shared = core!().shared as *const shared_data::Shared;
+    let shared = core!().shared as *const Shared<InterruptLock> as u64;
+    let shared = page_table::PhysAddr(shared);
 
     // Get the bootloader state and jump to the bootloader
     let bstate = core!().shared.bootloader().get();

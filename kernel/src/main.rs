@@ -12,7 +12,7 @@ r#"
 }
 
 #[unsafe(export_name="_start")]
-extern "sysv64" fn entry(shared: *const shared_data::Shared) -> ! {
+extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // This is the kernel entry point for all cores on the system
 
     // Initialize core locals

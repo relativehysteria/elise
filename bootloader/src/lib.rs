@@ -14,4 +14,5 @@ pub use embedded::INITIAL_KERNEL_IMAGE;
 pub use embedded::TRAMPOLINE;
 
 /// Data shared between the bootloader and the kernel
-pub static SHARED: shared_data::Shared = shared_data::Shared::new();
+pub static SHARED: shared_data::Shared<spinlock::DummyInterruptState> =
+    shared_data::Shared::new();

@@ -1,5 +1,4 @@
-use page_table::{VirtAddr, PageTable};
-use crate::Shared;
+use page_table::{VirtAddr, PageTable, PhysAddr};
 
 /// The trampoline function. This has to be identical to the function specified
 /// in trampoline.asm
@@ -7,7 +6,7 @@ pub type Trampoline = unsafe extern "sysv64" fn(
     entry: VirtAddr,
     stack: VirtAddr,
     table: PageTable,
-    shared: *const Shared,
+    shared: PhysAddr,
 ) -> !;
 
 /// Returns a pointer to the trampoline.

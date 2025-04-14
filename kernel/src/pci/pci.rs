@@ -2,13 +2,13 @@
 
 // PCIe might be implemented later if needed
 
-use core::mem::size_of;
 use alloc::vec::Vec;
 use alloc::boxed::Box;
+use core::mem::size_of;
 use core::fmt::Debug;
-
 use spinlock::SpinLock;
 use crate::pci::DRIVERS;
+use crate::core_locals::InterruptLock;
 
 /// I/O port for the configuration space address
 const PCI_CONFIG_ADDRESS: *const u32 = 0xCF8 as *const u32;
@@ -17,7 +17,8 @@ const PCI_CONFIG_ADDRESS: *const u32 = 0xCF8 as *const u32;
 const PCI_CONFIG_DATA: *const u32 = 0xCFC as *const u32;
 
 /// List of devices handled by a driver
-static DEVICES: SpinLock<Vec<Box<dyn Device>>> = SpinLock::new(Vec::new());
+static DEVICES: SpinLock<Vec<Box<dyn Device>>, InterruptLock> =
+    SpinLock::new(Vec::new());
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]

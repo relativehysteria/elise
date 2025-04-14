@@ -219,7 +219,7 @@ unsafe fn jump_to_kernel() {
     let entry = SHARED.kernel_image().lock().as_ref().unwrap().entry;
     let table = SHARED.kernel_pt().lock().as_ref().unwrap().clone();
     let stack = VirtAddr(SHARED.stack().load(Ordering::SeqCst));
-    let shared = &SHARED as *const shared_data::Shared;
+    let shared = page_table::PhysAddr(&SHARED as *const _ as u64);
 
     // Make sure the stack is at its base
     assert!(stack.0 == KERNEL_STACK_BASE,

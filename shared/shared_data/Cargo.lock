@@ -3,12 +3,30 @@
 version = 4
 
 [[package]]
+name = "const_assert"
+version = "0.1.0"
+
+[[package]]
 name = "cpu"
 version = "0.1.0"
 
 [[package]]
 name = "elf_parser"
 version = "0.1.0"
+dependencies = [
+ "page_table",
+]
+
+[[package]]
+name = "oncelock"
+version = "0.1.0"
+
+[[package]]
+name = "page_table"
+version = "0.1.0"
+dependencies = [
+ "cpu",
+]
 
 [[package]]
 name = "rangeset"
@@ -25,7 +43,10 @@ dependencies = [
 name = "shared_data"
 version = "0.1.0"
 dependencies = [
+ "const_assert",
  "elf_parser",
+ "oncelock",
+ "page_table",
  "rangeset",
  "serial",
  "spinlock",

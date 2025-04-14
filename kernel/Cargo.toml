@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+autorefcount = { path = "../shared/autorefcount" }
 shared_data = { path = "../shared/shared_data" }
 page_table = { path = "../shared/page_table" }
 core_reqs = { path = "../shared/core_reqs" }

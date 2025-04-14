@@ -11,7 +11,7 @@ pub use constants::*;
 pub use trampoline::*;
 
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use spinlock::SpinLock;
+use spinlock::{SpinLock, InterruptState};
 use oncelock::OnceLock;
 use serial::SerialDriver;
 use rangeset::RangeSet;
@@ -49,13 +49,13 @@ pub struct SdtTable {
 }
 
 /// Data structure shared between the kernel and the bootloader
-pub struct Shared {
+pub struct Shared<I: InterruptState> {
     /// Whether the kernel is rebooting completely
     pub rebooting: AtomicBool,
 
     /// The serial driver that can be used by the kernel and the bootloader to
     /// print messages through the serial ports
-    pub serial: SpinLock<Option<SerialDriver>>,
+    pub serial: SpinLock<Option<SerialDriver>, I>,
 
     /// All memory which is available for use by the bootloader and the kernel,
     /// at the same time.
@@ -65,16 +65,16 @@ pub struct Shared {
     /// map, all pointers in this memory point to valid physical memory even if
     /// paging in the bootloader is enabled (as long as it's the one provided by
     /// UEFI).
-    free_memory: SpinLock<Option<RangeSet>>,
+    free_memory: SpinLock<Option<RangeSet>, I>,
 
     /// Physical address of where the kernel image to boot is present.
     ///
     /// If this is `None`, the kernel image embedded within the bootloader will
     /// be booted instead of this.
-    kernel_image: SpinLock<Option<Elf<'static>>>,
+    kernel_image: SpinLock<Option<Elf<'static>>, I>,
 
     /// The page table used for the kernel
-    kernel_pt: SpinLock<Option<PageTable>>,
+    kernel_pt: SpinLock<Option<PageTable>, I>,
 
     /// The virtual address of the next available stack.
     next_stack: AtomicU64,
@@ -91,7 +91,7 @@ pub struct Shared {
     bootloader: OnceLock<BootloaderState>,
 }
 
-impl Shared {
+impl<I: InterruptState> Shared<I> {
     /// Creates an empty structure for shared data
     pub const fn new() -> Self {
         Self {
@@ -107,17 +107,17 @@ impl Shared {
     }
 
     /// Returns a reference to the free memory lock
-    pub fn free_memory(&self) -> &SpinLock<Option<RangeSet>> {
+    pub fn free_memory(&self) -> &SpinLock<Option<RangeSet>, I> {
         &self.free_memory
     }
 
     /// Returns a reference to the kernel image pointer lock
-    pub fn kernel_image(&self) -> &SpinLock<Option<Elf<'static>>> {
+    pub fn kernel_image(&self) -> &SpinLock<Option<Elf<'static>>, I> {
         &self.kernel_image
     }
 
     /// Returns a reference to the kernel page table
-    pub fn kernel_pt(&self) -> &SpinLock<Option<PageTable>> {
+    pub fn kernel_pt(&self) -> &SpinLock<Option<PageTable>, I> {
         &self.kernel_pt
     }
 
