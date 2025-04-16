@@ -96,10 +96,10 @@ impl<I: InterruptState> Shared<I> {
     pub const fn new() -> Self {
         Self {
             rebooting:    AtomicBool::new(true),
-            serial:       SpinLock::new(None),
-            free_memory:  SpinLock::new(None),
+            serial:       SpinLock::new_no_preempt(None),
+            free_memory:  SpinLock::new_no_preempt(None),
             kernel_image: SpinLock::new(None),
-            kernel_pt:    SpinLock::new(None),
+            kernel_pt:    SpinLock::new_no_preempt(None),
             next_stack:   AtomicU64::new(KERNEL_STACK_BASE),
             acpi_sdt:     OnceLock::new(),
             bootloader:   OnceLock::new(),
