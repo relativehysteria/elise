@@ -200,6 +200,8 @@ pub fn init(
             while core_state(id) != ApicState::Online {
                 core::hint::spin_loop();
             }
+
+            println_shatter!("IT LOADED");
         }
     }
 

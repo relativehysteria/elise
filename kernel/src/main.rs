@@ -1,25 +1,12 @@
 #![no_std]
 #![no_main]
 
-#[inline]
-fn header(core_id: u32) {
-    let header =
-r#"
-                   ┌────────────────────┐
-───────────────────│ ENTERED THE KERNEL │───────────────────
-                   └────────────────────┘     core:"#;
-    kernel::println!("{header} {core_id:X}");
-}
-
 #[unsafe(export_name="_start")]
 extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // This is the kernel entry point for all cores on the system
 
     // Initialize core locals
     kernel::core_locals::init(shared);
-
-    // Print the kernel header
-    header(kernel::core!().id);
 
     // Initialize the interrupts
     kernel::interrupts::init();

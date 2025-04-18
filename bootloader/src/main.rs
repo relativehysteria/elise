@@ -8,8 +8,7 @@ use page_table::{
     VirtAddr, PageTable, MapRequest, PageType, Permissions,
     PAGE_PRESENT, PAGE_WRITE, PAGE_SIZE};
 use shared_data::{
-    KERNEL_STACK_BASE, KERNEL_STACK_SIZE_PADDED,
-    KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE,
+    KERNEL_STACK_SIZE_PADDED, KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE,
     BootloaderState};
 use oncelock::OnceLock;
 use rangeset::RangeSet;
@@ -150,17 +149,7 @@ fn load_kernel() {
     println!();
 
     // This is a fresh kernel launch, set the stack back to its base
-    SHARED.stack().store(KERNEL_STACK_BASE, Ordering::SeqCst);
-    let stack_base = VirtAddr(KERNEL_STACK_BASE - KERNEL_STACK_SIZE_PADDED);
-
-    // Map the stack into kernel's memory
-    let request = MapRequest::new(
-        stack_base,
-        PageType::Page4K,
-        KERNEL_STACK_SIZE_PADDED,
-        Permissions::new(true, false, false)
-    ).unwrap();
-    table.map(&mut pmem, request).unwrap();
+    SHARED.reset_stack();
 
     // Map the trampoline in as well. First, make sure it's been mapped into
     // physical memory already
@@ -211,28 +200,48 @@ fn load_kernel() {
 
 /// Sets up a trampoline for jumping into the kernel from the bootloader and
 /// jumps to the kernel!
-unsafe fn jump_to_kernel() {
+unsafe fn jump_to_kernel(stack: VirtAddr) {
     // Get the pointer to the trampoline
     let trampoline = unsafe { shared_data::get_trampoline() };
 
-    // Get the kernel entry point, page table and stack addresses
+    // Get the kernel stuff
     let entry = SHARED.kernel_image().lock().as_ref().unwrap().entry;
     let table = SHARED.kernel_pt().lock().as_ref().unwrap().clone();
-    let stack = VirtAddr(SHARED.stack().load(Ordering::SeqCst));
     let shared = page_table::PhysAddr(&SHARED as *const _ as u64);
 
-    // Make sure the stack is at its base
-    assert!(stack.0 == KERNEL_STACK_BASE,
-        "Kernel stack base not {:?} for BSP", KERNEL_STACK_BASE);
-
-    println!("────────────────────────────────────────────────────────────");
-    println!("Jumping into kernel!");
-    println!(" ├ entry:  {:X?}", entry);
-    println!(" ├ stack:  {:X?}", stack);
-    println!(" ├ table:  {:X?}", table);
-    println!(" └ shared: {:X?}", shared);
+    println!(" ENTERING KERNEL ───────────────────────────────────────────");
 
     unsafe { trampoline(entry, stack, table, shared); }
+}
+
+/// Maps in a new stack into the kernel's memory and return the base where it's
+/// been mapped
+unsafe fn map_kernel_stack() -> VirtAddr {
+    // Get exclusive access to the kernel page table
+    let mut table = SHARED.kernel_pt().lock();
+    let table = table.as_mut().unwrap();
+
+    // Get exclusive access to physical memory
+    let mut pmem = SHARED.free_memory().lock();
+    let pmem = pmem.as_mut().expect("Memory not still uninitialized.");
+    let mut pmem = mm::PhysicalMemory(pmem);
+
+    // Get the base for a new stack
+    let stack_base = VirtAddr(SHARED.get_next_stack()
+        .expect("Out of stacks to map"));
+
+    // Map the stack into kernel's memory
+    let request = MapRequest::new(
+        stack_base,
+        PageType::Page4K,
+        KERNEL_STACK_SIZE_PADDED,
+        Permissions::new(true, false, false)
+    ).unwrap();
+    table.map(&mut pmem, request).unwrap();
+
+    // Return the base which should be put into RSP. This addition shouldn't
+    // fail because it's checked in `get_next_stack()`.
+    VirtAddr(stack_base.0.checked_add(KERNEL_STACK_SIZE_PADDED).unwrap())
 }
 
 /// This is the entry point for both the bootloader itself (the one that UEFI
@@ -247,6 +256,10 @@ unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
         unsafe { restore_physical_memory(); }
     }
 
+    // From now on, due to `restore_physical_memory()`, all bootloader virtual
+    // mappings are locked in and no more must be done. We are still free to
+    // use physical memory when doing kernel mappings and such.
+
     // If we're rebooting, load the kernel into memory. The `rebooting` variable
     // is initialized as `true`, so if the bootloader runs for the first time,
     // this path will be hit
@@ -255,10 +268,9 @@ unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
         SHARED.rebooting.store(false, Ordering::SeqCst);
     }
 
-    // From now on, due to `restore_physical_memory()`, all bootloader virtual
-    // mappings are locked in and no more must be done. We are still free to
-    // use physical memory when doing kernel mappings and such.
+    // Map in a new stack for this core
+    let stack = unsafe { map_kernel_stack() };
 
     // Set up the trampoline to the kernel and jump to it
-    unsafe { jump_to_kernel() };
+    unsafe { jump_to_kernel(stack) };
 }

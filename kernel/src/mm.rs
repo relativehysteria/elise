@@ -62,6 +62,7 @@ pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
     unsafe { APIC_TO_MEM_RANGE.set(&*Box::into_raw(mappings)) };
 }
 
+#[track_caller]
 /// Offset a physical address into our physical window
 pub fn phys_ptr(addr: PhysAddr) -> VirtAddr {
     VirtAddr(addr.0.checked_add(KERNEL_PHYS_WINDOW_BASE)

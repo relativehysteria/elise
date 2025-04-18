@@ -126,9 +126,16 @@ impl<I: InterruptState> Shared<I> {
         &self.bootloader
     }
 
-    /// Returns a reference to the base of the next stack
-    pub fn stack(&self) -> &AtomicU64 {
-        &self.next_stack
+    /// Sets the stack back to its base
+    pub fn reset_stack(&self) {
+        self.next_stack.store(KERNEL_STACK_BASE, Ordering::SeqCst);
+    }
+
+    /// Returns the base of a stack that can be directly mapped into a table
+    /// without being offset by the stack size (because stacks grown downwards).
+    pub fn get_next_stack(&self) -> Option<u64> {
+        self.next_stack.fetch_sub(KERNEL_STACK_SIZE_PADDED, Ordering::SeqCst)
+            .checked_sub(KERNEL_STACK_SIZE_PADDED)
     }
 
     /// Returns a reference to the root ACPI table as given by UEFI
@@ -136,6 +143,8 @@ impl<I: InterruptState> Shared<I> {
         &self.acpi_sdt
     }
 
+    /// Check whether the kernel wants a full reboot; for the bootloader, this
+    /// means that the kernel image has to be reloaded
     pub fn is_rebooting(&self) -> bool {
         self.rebooting.load(Ordering::SeqCst)
     }

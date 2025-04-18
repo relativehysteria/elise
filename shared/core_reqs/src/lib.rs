@@ -6,17 +6,17 @@
 use core::arch::asm;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *mut u8, n: usize)
+pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize)
         -> *mut u8 {
     unsafe { memmove(dest, src, n) }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn memmove(dest: *mut u8, src: *mut u8, n: usize)
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize)
         -> *mut u8 {
     // If the `src` is placed before `dest`, copy the memory backwards.
     // Thus the memory won't overwrite itself as it copies bytes.
-    if src < dest {
+    if src < dest as *const u8 {
         let mut i = n;
         while i != 0 {
             i -= 1;
