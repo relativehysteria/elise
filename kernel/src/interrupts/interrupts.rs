@@ -57,6 +57,61 @@ impl<'a> InterruptArgs<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[repr(u8)]
+/// Recognized Interrupt identifiers
+pub enum InterruptId {
+    DivideBy0 = 0x00,
+    // Reserved = 0x01,
+    NonMaskableInterrupt = 0x02,
+    Breakpoint,
+    Overflow,
+    BoundsRangeExceeded,
+    InvalidOpcode,
+    DeviceNotAvailable,
+    DoubleFault,
+    CoprocessorSegmentOverrun,
+    InvalidTSS,
+    SegmentNotPresent,
+    StackSegmentFault,
+    GeneralProtectionFault,
+    PageFault,
+    // Reserved = 0x0F,
+    X87FPUError = 0x10,
+    AlignmentCheck,
+    MachineCheck,
+    SIMDFloatingPointException,
+    Reserved(u8),
+    KernelDefined(u8),
+}
+
+impl From<u8> for InterruptId {
+    fn from(val: u8) -> Self {
+        match val {
+            0x00 => Self::DivideBy0,
+            0x02 => Self::NonMaskableInterrupt,
+            0x03 => Self::Breakpoint,
+            0x04 => Self::Overflow,
+            0x05 => Self::BoundsRangeExceeded,
+            0x06 => Self::InvalidOpcode,
+            0x07 => Self::DeviceNotAvailable,
+            0x08 => Self::DoubleFault,
+            0x09 => Self::CoprocessorSegmentOverrun,
+            0x0A => Self::InvalidTSS,
+            0x0B => Self::SegmentNotPresent,
+            0x0C => Self::StackSegmentFault,
+            0x0D => Self::GeneralProtectionFault,
+            0x0E => Self::PageFault,
+            0x10 => Self::X87FPUError,
+            0x11 => Self::AlignmentCheck,
+            0x12 => Self::MachineCheck,
+            0x13 => Self::SIMDFloatingPointException,
+            x @ (0x01 | 0x0F | 0x14..=0x1F) => Self::Reserved(x),
+            x @ 0x15..=0xFF => Self::KernelDefined(x),
+        }
+    }
+}
+
 /// Interrupt dispatch routine.
 /// Arguments are (interrupt number, frame, error code, register state at int)
 ///
@@ -260,7 +315,6 @@ unsafe extern "sysv64" fn interrupt_entry(
 
 #[inline(always)]
 fn unhandled(args: InterruptArgs) -> ! {
-
     /// Macro to copy unaligned fields from a packed struct.
     macro_rules! regs {
         ($regs:expr, $($field:ident),*) => { ($($regs.$field,)*) };
@@ -278,11 +332,11 @@ fn unhandled(args: InterruptArgs) -> ! {
     let core_id = core!().id;
     let cr2 = cpu::read_cr2();
 
-    let number = args.number;
+    let number = InterruptId::from(args.number);
     let error = args.error;
 
     panic!(r#"
-Unhandled interrupt <{number:#X}>, error code <{error:#X}> on core <{core_id}>
+Unhandled interrupt <{number:X?}>, error code <{error:#X}> on core <{core_id}>
  ┌────────────────────────────────────────────────────────────────────────────────────
  ├ rax {rax:016X} rcx {rcx:016X} rdx {rdx:016X} rbx {rbx:016X}
  ├ rsp {rsp:016X} rbp {rbp:016X} rsi {rsi:016X} rdi {rdi:016X}
