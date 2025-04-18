@@ -57,6 +57,10 @@ pub struct Shared<I: InterruptState> {
     /// print messages through the serial ports
     pub serial: SpinLock<Option<SerialDriver>, I>,
 
+    /// A lock to be used in print macros to prevent them from interleaving
+    /// their messages
+    pub print_lock: SpinLock<(), I>,
+
     /// All memory which is available for use by the bootloader and the kernel,
     /// at the same time.
     ///
@@ -97,6 +101,7 @@ impl<I: InterruptState> Shared<I> {
         Self {
             rebooting:    AtomicBool::new(true),
             serial:       SpinLock::new_no_preempt(None),
+            print_lock:   SpinLock::new_no_preempt(()),
             free_memory:  SpinLock::new_no_preempt(None),
             kernel_image: SpinLock::new(None),
             kernel_pt:    SpinLock::new_no_preempt(None),

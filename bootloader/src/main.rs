@@ -209,7 +209,7 @@ unsafe fn jump_to_kernel(stack: VirtAddr) {
     let table = SHARED.kernel_pt().lock().as_ref().unwrap().clone();
     let shared = page_table::PhysAddr(&SHARED as *const _ as u64);
 
-    println!(" ENTERING KERNEL ───────────────────────────────────────────");
+    println!("ENTERING KERNEL ────────────────────────────────────────────");
 
     unsafe { trampoline(entry, stack, table, shared); }
 }
