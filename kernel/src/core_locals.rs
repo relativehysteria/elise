@@ -104,6 +104,11 @@ impl CoreLocals {
         &self.free_lists[idx as usize - 3]
     }
 
+    /// Returns whether this core is the bootstrap processor
+    pub fn is_bsp(&self) -> bool {
+        self.id == 0
+    }
+
     /// Get access to the interrupt table
     pub unsafe fn interrupts(&self)
             -> &SpinLock<Option<Interrupts>, InterruptLock> {

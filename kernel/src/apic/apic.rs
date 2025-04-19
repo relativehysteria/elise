@@ -118,6 +118,11 @@ impl Apic {
             unsafe { apic.write(Register::EndOfInterrupt, 0); }
         }
     }
+
+    /// Reset the APIC to the original state before we took control of it.
+    pub unsafe fn reset(&mut self) {
+        unimplemented!();
+    }
 }
 
 #[derive(Default)]

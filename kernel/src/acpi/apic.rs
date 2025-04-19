@@ -48,7 +48,7 @@ pub fn check_in() {
                           Ordering::SeqCst,
                           Ordering::SeqCst).unwrap_or_else(|x| x);
 
-    if core!().id == 0 {
+    if core!().is_bsp() {
         // BSP should already be marked online
         assert!(old_state == ApicState::Online as u8,
                 "BSP not marked online in APIC state");
