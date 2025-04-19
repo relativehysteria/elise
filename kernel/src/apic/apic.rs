@@ -105,6 +105,19 @@ impl Apic {
             }
         }
     }
+
+    /// Signal the end of an interrupt
+    pub unsafe fn eoi() {
+        // This EOI implementation must be completely lock-free because the APIC
+        // might be accesses in NMIs or during a panic. The EOI wrmsr is atomic
+        // with respect to other interrupts, so issuing it is safe.
+
+        let apic = unsafe { &mut *core!().apic().shatter() };
+
+        if let Some(apic) = apic {
+            unsafe { apic.write(Register::EndOfInterrupt, 0); }
+        }
+    }
 }
 
 #[derive(Default)]

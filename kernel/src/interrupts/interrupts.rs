@@ -1,11 +1,31 @@
 //! Routines and structures for manipulating x86 interrupts
 
+// TODO: use InterruptId instead of u8
+
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::arch::asm;
 use core::mem::ManuallyDrop;
 use crate::interrupts::{handler, INT_HANDLERS, AllRegs};
+use crate::apic::Apic;
+
+/// Indicates whether the interrupt number at index into this array requires an
+/// EOI when handled
+static EOI_REQUIRED: [AtomicBool; 256] =
+    [const { AtomicBool::new(false) }; 256];
+
+/// Inidicates whether we're draining interrupts instead of handling them.
+///
+/// This has to be set before a soft reboot such that we drain all pending
+/// interrupts before we shut down the APIC and the kernel.
+pub static DRAINING_EOIS: AtomicBool = AtomicBool::new(false);
+
+/// Indicates whether this interrupt is supposed to get handled even when we're
+/// draining EOIs
+static DRAIN_PRECEDENCE: [AtomicBool; 256] =
+    [const { AtomicBool::new(false) }; 256];
 
 /// A 64-bit task state segment structure
 #[repr(C, packed)]
@@ -51,64 +71,14 @@ pub struct InterruptArgs<'a> {
 
 impl<'a> InterruptArgs<'a> {
     #[inline]
-    /// Create a new
+    /// Wrap the interrput information into this struct
     pub fn new(n: u8, f: &'a InterruptFrame, e: u64, r: &'a AllRegs) -> Self {
         Self { number: n, frame: f, error: e, regs: r }
     }
-}
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[repr(u8)]
-/// Recognized Interrupt identifiers
-pub enum InterruptId {
-    DivideBy0 = 0x00,
-    // Reserved = 0x01,
-    NonMaskableInterrupt = 0x02,
-    Breakpoint,
-    Overflow,
-    BoundsRangeExceeded,
-    InvalidOpcode,
-    DeviceNotAvailable,
-    DoubleFault,
-    CoprocessorSegmentOverrun,
-    InvalidTSS,
-    SegmentNotPresent,
-    StackSegmentFault,
-    GeneralProtectionFault,
-    PageFault,
-    // Reserved = 0x0F,
-    X87FPUError = 0x10,
-    AlignmentCheck,
-    MachineCheck,
-    SIMDFloatingPointException,
-    Reserved(u8),
-    KernelDefined(u8),
-}
-
-impl From<u8> for InterruptId {
-    fn from(val: u8) -> Self {
-        match val {
-            0x00 => Self::DivideBy0,
-            0x02 => Self::NonMaskableInterrupt,
-            0x03 => Self::Breakpoint,
-            0x04 => Self::Overflow,
-            0x05 => Self::BoundsRangeExceeded,
-            0x06 => Self::InvalidOpcode,
-            0x07 => Self::DeviceNotAvailable,
-            0x08 => Self::DoubleFault,
-            0x09 => Self::CoprocessorSegmentOverrun,
-            0x0A => Self::InvalidTSS,
-            0x0B => Self::SegmentNotPresent,
-            0x0C => Self::StackSegmentFault,
-            0x0D => Self::GeneralProtectionFault,
-            0x0E => Self::PageFault,
-            0x10 => Self::X87FPUError,
-            0x11 => Self::AlignmentCheck,
-            0x12 => Self::MachineCheck,
-            0x13 => Self::SIMDFloatingPointException,
-            x @ (0x01 | 0x0F | 0x14..=0x1F) => Self::Reserved(x),
-            x @ 0x15..=0xFF => Self::KernelDefined(x),
-        }
+    /// Returns whether this interrupt is an exception
+    pub fn is_exception(&self) -> bool {
+        self.number < 32
     }
 }
 
@@ -128,8 +98,29 @@ pub struct Interrupts {
 
 impl Interrupts {
     /// Register an interrupt handler
-    fn register(&mut self, interrupt_number: u8, handler: InterruptDispatch) {
-        self.dispatch[interrupt_number as usize] = Some(handler);
+    fn register(&mut self, number: u8, handler: InterruptDispatch, eoi: bool,
+                precendent: bool) {
+        let number = number as usize;
+
+        // Re-registering an interrupt handler at runtime is undefined behavior
+        assert!(self.dispatch[number].is_none(),
+            "Interrupt handler already installed for INT #{}", number);
+
+        // Register the handler
+        self.dispatch[number] = Some(handler);
+
+        // Register whether EOI is required when handling this interrupt
+        EOI_REQUIRED[number].store(eoi, Ordering::SeqCst);
+
+        // Register whether this interrupt gets handled even during EOI draining
+        DRAIN_PRECEDENCE[number].store(precendent, Ordering::SeqCst);
+    }
+
+    /// Unregister an interrupt handler
+    fn unregister(&mut self, number: u8) {
+        let number = number as usize;
+        self.dispatch[number] = None;
+        EOI_REQUIRED[number].store(false, Ordering::SeqCst);
     }
 }
 
@@ -282,32 +273,58 @@ pub fn init() {
 
     // Create the interrupts structure and register our handlers
     let mut ints = Interrupts { dispatch: [None; 256], gdt, idt, tss };
-    ints.register(0x2, handler::nmi);
-    ints.register(0xE, handler::page_fault);
+    ints.register(0x2, handler::nmi, false, true);
+    ints.register(0xE, handler::page_fault, false, true);
 
     *interrupts = Some(ints);
 }
 
 #[unsafe(no_mangle)]
+/// This is the entry point for all interrupts
 unsafe extern "sysv64" fn interrupt_entry(
     number: u8,
     frame: &InterruptFrame,
     error: u64,
     regs: &AllRegs,
 ) {
-    // TODO:
-    // * EOI
-    // * Drain before soft reboot
-    // * enter exception/interrupt
-
+    // Get the arguments for this interrupt
     let args = InterruptArgs::new(number, frame, error, regs);
+    let number = number as usize;
 
-    // Dispatch the interrupt if applicable
-    let handled = unsafe {
-        core!().interrupts().lock().as_ref().unwrap()
-            .dispatch[number as usize]
-            .map_or(false, |handler| handler(args))
+    // Increment the refcount for this interrupt. Gets decremented on scope end
+    let _depth = if args.is_exception() {
+        core!().enter_exception()
+    } else {
+        core!().enter_interrupt()
     };
+
+    // Check whether we're draining interrupts and whether this interrupt gets
+    // handled even during EOI draining
+    let draining_eois = DRAINING_EOIS.load(Ordering::SeqCst);
+    let precedent = DRAIN_PRECEDENCE[number].load(Ordering::SeqCst);
+
+    // If we're not draining interrupts, attempt to handle it
+    let handled = if !draining_eois || precedent {
+        unsafe {
+            core!()
+                .interrupts()
+                .lock()
+                .as_ref()
+                .unwrap()
+                .dispatch[number]
+                .map_or(false, |handler| handler(args))
+        }
+    } else {
+        false
+    };
+
+    // EOI the APIC if required
+    if EOI_REQUIRED[number].load(Ordering::SeqCst) {
+        unsafe { Apic::eoi() };
+
+        // If we're only handling EOIs, we have handled what was requested
+        if draining_eois { return; }
+    }
 
     // If the interrupt was not handled, panic
     if !handled { unhandled(args); }
@@ -354,4 +371,59 @@ Unhandled interrupt <{number:X?}>, error code <{error:#X}> on core <{core_id}>
  ├ xmm12 {xmm12:032X} xmm13 {xmm13:032X}
  └ xmm14 {xmm14:032X} xmm15 {xmm15:032X}
 "#);
+}
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[repr(u8)]
+/// Recognized Interrupt identifiers
+pub enum InterruptId {
+    DivideBy0 = 0x00,
+    // Reserved = 0x01,
+    NonMaskableInterrupt = 0x02,
+    Breakpoint,
+    Overflow,
+    BoundsRangeExceeded,
+    InvalidOpcode,
+    DeviceNotAvailable,
+    DoubleFault,
+    CoprocessorSegmentOverrun,
+    InvalidTSS,
+    SegmentNotPresent,
+    StackSegmentFault,
+    GeneralProtectionFault,
+    PageFault,
+    // Reserved = 0x0F,
+    X87FPUError = 0x10,
+    AlignmentCheck,
+    MachineCheck,
+    SIMDFloatingPointException,
+    Reserved(u8),
+    KernelDefined(u8),
+}
+
+impl From<u8> for InterruptId {
+    fn from(val: u8) -> Self {
+        match val {
+            0x00 => Self::DivideBy0,
+            0x02 => Self::NonMaskableInterrupt,
+            0x03 => Self::Breakpoint,
+            0x04 => Self::Overflow,
+            0x05 => Self::BoundsRangeExceeded,
+            0x06 => Self::InvalidOpcode,
+            0x07 => Self::DeviceNotAvailable,
+            0x08 => Self::DoubleFault,
+            0x09 => Self::CoprocessorSegmentOverrun,
+            0x0A => Self::InvalidTSS,
+            0x0B => Self::SegmentNotPresent,
+            0x0C => Self::StackSegmentFault,
+            0x0D => Self::GeneralProtectionFault,
+            0x0E => Self::PageFault,
+            0x10 => Self::X87FPUError,
+            0x11 => Self::AlignmentCheck,
+            0x12 => Self::MachineCheck,
+            0x13 => Self::SIMDFloatingPointException,
+            x @ (0x01 | 0x0F | 0x14..=0x1F) => Self::Reserved(x),
+            x @ 0x15..=0xFF => Self::KernelDefined(x),
+        }
+    }
 }
