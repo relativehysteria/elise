@@ -29,12 +29,5 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
    // Check in that this core has booted and is ready!
     kernel::acpi::apic::check_in();
 
-    if kernel::core!().id == 2 {
-        use kernel::core;
-        kernel::println!("panic on core 2 attempt");
-        panic!("panic in core 2");
-    }
-
-    loop { core::hint::spin_loop(); }
     panic!();
 }

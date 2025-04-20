@@ -82,7 +82,7 @@ gdt_base:
     dq 0x0000000000000000 ; 0x00 | null
     dq 0x00009A008000FFFF ; 0x08 | 16-bit, present, code, base 0x8000
     dq 0x000092000000FFFF ; 0x10 | 16-bit, present, data, base 0
-    dq 0x00cF9A000000FFFF ; 0x18 | 32-bit, present, code, base 0
+    dq 0x00CF9A000000FFFF ; 0x18 | 32-bit, present, code, base 0
     dq 0x00CF92000000FFFF ; 0x20 | 32-bit, present, data, base 0
     dq 0x00209A0000000000 ; 0x28 | 64-bit, present, code, base 0
     dq 0x0000920000000000 ; 0x30 | 64-bit, present, data, base 0

@@ -6,7 +6,7 @@ use crate::apic::Apic;
 use crate::acpi::apic::{ApicState, core_state, MAX_CORES};
 
 /// Tracks whether we're currently in the process of a panic on the BSP
-static IN_PANIC: AtomicBool = AtomicBool::new(false);
+static BSP_IN_PANIC: AtomicBool = AtomicBool::new(false);
 
 /// Pointer to a pending panic. When a non-BSP core panics, it will
 /// place its `PanicInfo` pointer into here, NMI the core 0, and then halt
@@ -14,11 +14,13 @@ static IN_PANIC: AtomicBool = AtomicBool::new(false);
 static PANIC_PENDING: AtomicPtr<PanicInfo> =
     AtomicPtr::new(core::ptr::null_mut());
 
+// XXX: there is a bug somewhere where if a panic is triggered on the BSP core
+// and some non-BSP core at the same time, a #GP fault is raised on the BSP.
 
 #[inline]
 /// Returns whether we're currently in the process of a panic on the BSP
-pub fn in_panic() -> bool {
-    IN_PANIC.load(Ordering::SeqCst)
+pub fn bsp_in_panic() -> bool {
+    BSP_IN_PANIC.load(Ordering::SeqCst)
 }
 
 /// The NMI ICR
@@ -33,11 +35,16 @@ pub fn panic(info: &PanicInfo) -> ! {
 
     // If this is not the BSP, notify it of our panic, and halt this core
     if !core!().is_bsp() {
-        // Check if the BSP is already panicking. If it's not, report our panic
-        if !in_panic() {
-            // Save our panic info
-            PANIC_PENDING.store(info as *const _ as *mut _, Ordering::SeqCst);
+        // Make sure there's only ever one pending panic
+        let no_panic_pending = PANIC_PENDING.compare_exchange(
+            core::ptr::null_mut(),
+            info as *const _ as *mut _,
+            Ordering::SeqCst,
+            Ordering::SeqCst).is_ok();
 
+        // If the BSP isn't yet panicking and there's no other pending panic,
+        // send out an NMI to the BSP, telling it there's a pending panic now
+        if !bsp_in_panic() && no_panic_pending {
             // Notify the BSP of our panic via NMI
             unsafe {
                 // Get access to the APIC
@@ -54,7 +61,7 @@ pub fn panic(info: &PanicInfo) -> ! {
 
     // At this point, we know that the BSP has panicked. Sent an NMI to all
     // other cores on the system and wait for them to halt
-    IN_PANIC.store(true, Ordering::SeqCst);
+    BSP_IN_PANIC.store(true, Ordering::SeqCst);
 
     // Save the panic information
     let our_info: *const PanicInfo = info;
@@ -63,7 +70,7 @@ pub fn panic(info: &PanicInfo) -> ! {
     // Print information about the panic
     for &(bsp_msg, info) in &[
         ("non-BSP", other_info),
-        ("BSP", our_info)
+        ("BSP", our_info),
     ] {
         // Only print if there is panic info
         if info.is_null() { continue; }

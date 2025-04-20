@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 
 use crate::interrupts::InterruptArgs;
-use crate::panic::in_panic;
+use crate::panic::bsp_in_panic;
 use crate::acpi::apic::{set_core_state, ApicState};
 
 /// NMI handler.
@@ -12,7 +12,7 @@ pub unsafe fn nmi(args: InterruptArgs) -> bool {
     // we get an NMI, we don't expect to recover
 
     // Don't recursively re-panic on the BSP
-    if core!().is_bsp() && in_panic() {
+    if core!().is_bsp() && bsp_in_panic() {
         return true;
     }
 
