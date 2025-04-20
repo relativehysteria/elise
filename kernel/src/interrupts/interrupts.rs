@@ -57,7 +57,7 @@ impl TablePtr {
 /// The interrupt information passed to all interrupt handlers
 pub struct InterruptArgs<'a> {
     /// The interrupt vector identifier
-    pub number: u8,
+    pub id: InterruptId,
 
     /// The interrupt frame passed by the CPU to the handler
     pub frame: &'a InterruptFrame,
@@ -72,13 +72,14 @@ pub struct InterruptArgs<'a> {
 impl<'a> InterruptArgs<'a> {
     #[inline]
     /// Wrap the interrput information into this struct
-    pub fn new(n: u8, f: &'a InterruptFrame, e: u64, r: &'a AllRegs) -> Self {
-        Self { number: n, frame: f, error: e, regs: r }
+    pub fn new(id: InterruptId, frame: &'a InterruptFrame, error: u64,
+            regs: &'a AllRegs) -> Self {
+        Self { id, frame, error, regs }
     }
 
     /// Returns whether this interrupt is an exception
     pub fn is_exception(&self) -> bool {
-        self.number < 32
+        (self.id as u8) < 32
     }
 }
 
@@ -98,29 +99,33 @@ pub struct Interrupts {
 
 impl Interrupts {
     /// Register an interrupt handler
-    fn register(&mut self, number: u8, handler: InterruptDispatch, eoi: bool,
-                precendent: bool) {
-        let number = number as usize;
+    fn register(&mut self, id: InterruptId, handler: InterruptDispatch,
+                eoi: bool, precendent: bool) {
+        let idx = id as usize;
+
+        // Do not register any handler for reserved interrupts
+        assert!(id >= InterruptId::Reserved && id <= InterruptId::LastReserved,
+            "Can't register handler for reserved interrupts.");
 
         // Re-registering an interrupt handler at runtime is undefined behavior
-        assert!(self.dispatch[number].is_none(),
-            "Interrupt handler already installed for INT #{}", number);
+        assert!(self.dispatch[idx].is_none(),
+            "Interrupt handler already installed for {:?}", id);
 
         // Register the handler
-        self.dispatch[number] = Some(handler);
+        self.dispatch[idx] = Some(handler);
 
         // Register whether EOI is required when handling this interrupt
-        EOI_REQUIRED[number].store(eoi, Ordering::SeqCst);
+        EOI_REQUIRED[idx].store(eoi, Ordering::SeqCst);
 
         // Register whether this interrupt gets handled even during EOI draining
-        DRAIN_PRECEDENCE[number].store(precendent, Ordering::SeqCst);
+        DRAIN_PRECEDENCE[idx].store(precendent, Ordering::SeqCst);
     }
 
     /// Unregister an interrupt handler
-    fn unregister(&mut self, number: u8) {
-        let number = number as usize;
-        self.dispatch[number] = None;
-        EOI_REQUIRED[number].store(false, Ordering::SeqCst);
+    fn unregister(&mut self, id: InterruptId) {
+        let idx = id as usize;
+        self.dispatch[idx] = None;
+        EOI_REQUIRED[idx].store(false, Ordering::SeqCst);
     }
 }
 
@@ -273,8 +278,8 @@ pub fn init() {
 
     // Create the interrupts structure and register our handlers
     let mut ints = Interrupts { dispatch: [None; 256], gdt, idt, tss };
-    ints.register(0x2, handler::nmi, false, true);
-    ints.register(0xE, handler::page_fault, false, true);
+    ints.register(InterruptId::NonMaskableInterrupt, handler::nmi, false, true);
+    ints.register(InterruptId::PageFault, handler::page_fault, false, true);
 
     *interrupts = Some(ints);
 }
@@ -282,14 +287,14 @@ pub fn init() {
 #[unsafe(no_mangle)]
 /// This is the entry point for all interrupts
 unsafe extern "sysv64" fn interrupt_entry(
-    number: u8,
+    id: InterruptId,
     frame: &InterruptFrame,
     error: u64,
     regs: &AllRegs,
 ) {
     // Get the arguments for this interrupt
-    let args = InterruptArgs::new(number, frame, error, regs);
-    let number = number as usize;
+    let args = InterruptArgs::new(id, frame, error, regs);
+    let idx = id as usize;
 
     // Increment the refcount for this interrupt. Gets decremented on scope end
     let _depth = if args.is_exception() {
@@ -301,7 +306,7 @@ unsafe extern "sysv64" fn interrupt_entry(
     // Check whether we're draining interrupts and whether this interrupt gets
     // handled even during EOI draining
     let draining_eois = DRAINING_EOIS.load(Ordering::SeqCst);
-    let precedent = DRAIN_PRECEDENCE[number].load(Ordering::SeqCst);
+    let precedent = DRAIN_PRECEDENCE[idx].load(Ordering::SeqCst);
 
     // If we're not draining interrupts, attempt to handle it
     let handled = if !draining_eois || precedent {
@@ -311,7 +316,7 @@ unsafe extern "sysv64" fn interrupt_entry(
                 .lock()
                 .as_ref()
                 .unwrap()
-                .dispatch[number]
+                .dispatch[idx]
                 .map_or(false, |handler| handler(args))
         }
     } else {
@@ -319,7 +324,7 @@ unsafe extern "sysv64" fn interrupt_entry(
     };
 
     // EOI the APIC if required
-    if EOI_REQUIRED[number].load(Ordering::SeqCst) {
+    if EOI_REQUIRED[idx].load(Ordering::SeqCst) {
         unsafe { Apic::eoi() };
 
         // If we're only handling EOIs, we have handled what was requested
@@ -349,11 +354,11 @@ fn unhandled(args: InterruptArgs) -> ! {
     let core_id = core!().id;
     let cr2 = cpu::read_cr2();
 
-    let number = InterruptId::from(args.number);
+    let id = args.id;
     let error = args.error;
 
     panic!(r#"
-Unhandled interrupt <{number:X?}>, error code <{error:#X}> on core <{core_id}>
+Unhandled interrupt <{id:X?}>, error code <{error:#X}> on core <{core_id}>
  ┌────────────────────────────────────────────────────────────────────────────────────
  ├ rax {rax:016X} rcx {rcx:016X} rdx {rdx:016X} rbx {rbx:016X}
  ├ rsp {rsp:016X} rbp {rbp:016X} rsi {rsi:016X} rdi {rdi:016X}
@@ -373,7 +378,7 @@ Unhandled interrupt <{number:X?}>, error code <{error:#X}> on core <{core_id}>
 "#);
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 #[repr(u8)]
 /// Recognized Interrupt identifiers
 pub enum InterruptId {
@@ -397,13 +402,19 @@ pub enum InterruptId {
     AlignmentCheck,
     MachineCheck,
     SIMDFloatingPointException,
-    Reserved(u8),
-    KernelDefined(u8),
+
+    // Reserved hole
+    Reserved = 0x14,
+    LastReserved = 0x1F,
+
+    // Kernel definable interrupts start at 0x20
+    SoftRebootTimer = 0x20,
 }
 
 impl From<u8> for InterruptId {
     fn from(val: u8) -> Self {
         match val {
+            // Well defined IVTs
             0x00 => Self::DivideBy0,
             0x02 => Self::NonMaskableInterrupt,
             0x03 => Self::Breakpoint,
@@ -422,8 +433,18 @@ impl From<u8> for InterruptId {
             0x11 => Self::AlignmentCheck,
             0x12 => Self::MachineCheck,
             0x13 => Self::SIMDFloatingPointException,
-            x @ (0x01 | 0x0F | 0x14..=0x1F) => Self::Reserved(x),
-            x @ 0x15..=0xFF => Self::KernelDefined(x),
+
+            // Kernel defined IVTs
+            0x20 => Self::SoftRebootTimer,
+
+            // Everything else is reserved and must not be used
+            _ => Self::Reserved,
         }
+    }
+}
+
+impl From<InterruptId> for usize {
+    fn from(val: InterruptId) -> Self {
+        val as u8 as usize
     }
 }
