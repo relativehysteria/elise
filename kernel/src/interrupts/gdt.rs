@@ -87,8 +87,6 @@ impl Gdt {
         gdt.push(tss_low);
         gdt.push(tss_high);
         gdt.shrink_to_fit();
-        println_shatter!("cs: {cs_idx:?} | ds: {ds_idx:?}");
-        println_shatter!("{gdt:X?}");
 
         (Self { raw: gdt }, tss, tss_entry)
     }
