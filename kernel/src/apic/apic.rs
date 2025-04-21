@@ -4,6 +4,7 @@
 
 use page_table::{
     PageType, PAGE_NXE, PAGE_WRITE, PAGE_CACHE_DISABLE, PAGE_PRESENT};
+use crate::interrupts::InterruptId;
 
 /// The x2APIC enable bit in the `IA32_APIC_BASE` MSR
 const IA32_APIC_BASE_EXTD: u64 = 1 << 10;
@@ -122,6 +123,35 @@ impl Apic {
     /// Reset the APIC to the original state before we took control of it.
     pub unsafe fn reset(&mut self) {
         unimplemented!();
+    }
+
+    /// Enable the APIC timer which is used to check the serial port
+    /// periodically to see if the user wants to issue a soft reboot
+    pub unsafe fn enable_reboot_timer(&mut self) {
+        const PERIODIC_MODE: u32 = 1 << 17;
+
+        unsafe {
+            // Set the initial count to 0, disabling the timer
+            self.write(Register::InitialCount, 0);
+
+            // Register an interrupt handler for this timer
+            {
+                core!().interrupts().lock().as_mut().unwrap().register(
+                    InterruptId::SoftRebootTimer,
+                    crate::interrupts::handler::soft_reboot_timer,
+                    true);
+            }
+
+            // Set the timer divide register to divide by 2 (0 is correct)
+            self.write(Register::DivideConfiguration, 0);
+
+            // Program the APIC
+            self.write(Register::LvtTimer,
+                PERIODIC_MODE | (InterruptId::SoftRebootTimer as u8 as u32));
+
+            // Enable the timer by setting the initial count
+            self.write(Register::InitialCount, 100_000);
+        }
     }
 }
 

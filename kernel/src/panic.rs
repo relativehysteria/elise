@@ -14,9 +14,6 @@ static BSP_IN_PANIC: AtomicBool = AtomicBool::new(false);
 static PANIC_PENDING: AtomicPtr<PanicInfo> =
     AtomicPtr::new(core::ptr::null_mut());
 
-// XXX: there is a bug somewhere where if a panic is triggered on the BSP core
-// and some non-BSP core at the same time, a #GP fault is raised on the BSP.
-
 #[inline]
 /// Returns whether we're currently in the process of a panic on the BSP
 pub fn bsp_in_panic() -> bool {
@@ -56,6 +53,7 @@ pub fn panic(info: &PanicInfo) -> ! {
             }
         }
 
+        // Halt the core forever
         unsafe { cpu::halt(); }
     }
 
@@ -88,7 +86,7 @@ pub fn panic(info: &PanicInfo) -> ! {
     }
 
     // Disable all other cores and wait for them to halt
-    let _apic = unsafe {
+    let apic = unsafe {
         // Get access to the APIC
         let apic = &mut *core!().apic().shatter();
         let apic = apic.as_mut().unwrap();
@@ -98,10 +96,17 @@ pub fn panic(info: &PanicInfo) -> ! {
         apic
     };
 
-    // TODO: Wait for soft reboot to be issued
+    // Wait for a soft reboot request to be issued
+    let mut serial = core!().shared.serial.lock();
+    let serial = serial.as_mut().unwrap();
+    while !core!().shared.rebooting.load(Ordering::SeqCst) {
+        if serial.read_byte() == Some(b'S') {
+            core!().shared.rebooting.store(true, Ordering::SeqCst);
+        }
+    }
 
-    // Halt
-    unsafe { cpu::halt() };
+    // Soft reboot the system
+    unsafe { soft_reboot(apic); }
 }
 
 /// Disable all non-BSP cores on the system
@@ -122,6 +127,7 @@ unsafe fn disable_cores(apic: &mut Apic) {
                 while core_state(id) != ApicState::Halted {
                     unsafe { apic.ipi(id, NMI); }
                     crate::time::sleep(1_000);
+                    core::hint::spin_loop();
                 }
 
                 // INIT the core

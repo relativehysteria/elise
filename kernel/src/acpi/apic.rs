@@ -198,6 +198,7 @@ pub fn init(
 
             // Wait for the core to come online
             while core_state(id) != ApicState::Online {
+                crate::time::sleep(1_000);
                 core::hint::spin_loop();
             }
         }

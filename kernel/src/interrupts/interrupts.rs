@@ -98,13 +98,14 @@ pub struct Interrupts {
 }
 
 impl Interrupts {
+    #[track_caller]
     /// Register an interrupt handler
-    fn register(&mut self, id: InterruptId, handler: InterruptDispatch,
-                eoi: bool, precendent: bool) {
+    pub fn register(&mut self, id: InterruptId, handler: InterruptDispatch,
+            eoi: bool) {
         let idx = id as usize;
 
         // Do not register any handler for reserved interrupts
-        assert!(id >= InterruptId::Reserved && id <= InterruptId::LastReserved,
+        assert!(id < InterruptId::Reserved || id > InterruptId::LastReserved,
             "Can't register handler for reserved interrupts.");
 
         // Re-registering an interrupt handler at runtime is undefined behavior
@@ -116,13 +117,21 @@ impl Interrupts {
 
         // Register whether EOI is required when handling this interrupt
         EOI_REQUIRED[idx].store(eoi, Ordering::SeqCst);
+    }
 
-        // Register whether this interrupt gets handled even during EOI draining
-        DRAIN_PRECEDENCE[idx].store(precendent, Ordering::SeqCst);
+    #[track_caller]
+    /// Register an interrupt handler that gets handled even when EOIs are being
+    /// drained
+    pub fn register_precedent(&mut self, id: InterruptId,
+            handler: InterruptDispatch, eoi: bool) {
+        self.register(id, handler, eoi);
+
+        // Register that this interrupt gets handled even during EOI draining
+        DRAIN_PRECEDENCE[id as usize].store(true, Ordering::SeqCst);
     }
 
     /// Unregister an interrupt handler
-    fn unregister(&mut self, id: InterruptId) {
+    pub fn unregister(&mut self, id: InterruptId) {
         let idx = id as usize;
         self.dispatch[idx] = None;
         EOI_REQUIRED[idx].store(false, Ordering::SeqCst);
@@ -142,7 +151,7 @@ pub struct InterruptFrame {
 
 /// A raw IDT entry, which is valid when placed in an IDT in this
 /// representation
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 pub struct IdtEntry {
     offset_low:  u16,
@@ -175,6 +184,7 @@ impl IdtEntry {
         }
     }
 }
+
 
 /// Switch to a kernel-based GDT, load a TSS with a critical stack for #DF, #MC
 /// and NMI interrupts and setup an IDT.
@@ -278,8 +288,10 @@ pub fn init() {
 
     // Create the interrupts structure and register our handlers
     let mut ints = Interrupts { dispatch: [None; 256], gdt, idt, tss };
-    ints.register(InterruptId::NonMaskableInterrupt, handler::nmi, false, true);
-    ints.register(InterruptId::PageFault, handler::page_fault, false, true);
+    ints.register_precedent(
+        InterruptId::NonMaskableInterrupt, handler::nmi, false);
+    ints.register_precedent(
+        InterruptId::PageFault, handler::page_fault, false);
 
     *interrupts = Some(ints);
 }
@@ -295,6 +307,9 @@ unsafe extern "sysv64" fn interrupt_entry(
     // Get the arguments for this interrupt
     let args = InterruptArgs::new(id, frame, error, regs);
     let idx = id as usize;
+
+    println_shatter!("Core {:?} in interrupt {:?}. frame: {:X?}",
+        core!().id, id, frame);
 
     // Increment the refcount for this interrupt. Gets decremented on scope end
     let _depth = if args.is_exception() {

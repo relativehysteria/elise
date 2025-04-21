@@ -24,10 +24,18 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
 
         // Initialize NUMA information and bring up all APICs on the system
         unsafe { kernel::acpi::init().expect("Couldn't parse ACPI tables"); }
+
+        // Enable the APIC timer. This timer is used to check the serial port
+        // periodically to see if the user wants to issue a soft reboot
+        unsafe {
+            kernel::core!().apic().lock().as_mut().unwrap()
+                .enable_reboot_timer();
+        }
     }
 
-   // Check in that this core has booted and is ready!
+    // Check in that this core has booted and is ready!
     kernel::acpi::apic::check_in();
 
+    //loop { unsafe { core::arch::asm!("hlt"); } }
     panic!();
 }
