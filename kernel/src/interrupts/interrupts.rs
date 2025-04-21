@@ -265,9 +265,6 @@ unsafe extern "sysv64" fn interrupt_entry(
     let args = InterruptArgs::new(id, frame, error, regs);
     let idx = id as usize;
 
-    println_shatter!("Core {:?} in interrupt {:?}. frame: {:X?}",
-        core!().id, id, frame);
-
     // Increment the refcount for this interrupt. Gets decremented on scope end
     let _depth = if args.is_exception() {
         core!().enter_exception()

@@ -36,6 +36,5 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // Check in that this core has booted and is ready!
     kernel::acpi::apic::check_in();
 
-    //loop { unsafe { core::arch::asm!("hlt"); } }
     panic!();
 }
