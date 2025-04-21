@@ -1,15 +1,12 @@
 //! Routines and structures for manipulating x86 interrupts
 
-// TODO: use InterruptId instead of u8
-
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use alloc::vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::arch::asm;
-use core::mem::ManuallyDrop;
 use crate::interrupts::{handler, INT_HANDLERS, AllRegs};
 use crate::apic::Apic;
+use crate::interrupts::{Gdt, Tss, get_selector_indices};
 
 /// Indicates whether the interrupt number at index into this array requires an
 /// EOI when handled
@@ -26,32 +23,6 @@ pub static DRAINING_EOIS: AtomicBool = AtomicBool::new(false);
 /// draining EOIs
 static DRAIN_PRECEDENCE: [AtomicBool; 256] =
     [const { AtomicBool::new(false) }; 256];
-
-/// A 64-bit task state segment structure
-#[repr(C, packed)]
-#[derive(Clone, Copy, Default)]
-pub struct Tss {
-    reserved1:   u32,
-    rsp:         [u64; 3],
-    reserved2:   u64,
-    ist:         [u64; 7],
-    reserved3:   u64,
-    reserved4:   u16,
-    iopb_offset: u16,
-}
-
-/// Descriptor pointer used to load with `lidt` and `lgdt`
-#[repr(C, packed)]
-struct TablePtr {
-    limit: u16,
-    base:  u64,
-}
-
-impl TablePtr {
-    fn new(limit: u16, base: u64) -> Self {
-        Self { limit, base }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 /// The interrupt information passed to all interrupt handlers
@@ -94,7 +65,7 @@ pub struct Interrupts {
     dispatch: [Option<InterruptDispatch>; 256],
     pub tss: Box<Tss>,
     pub idt: Vec<IdtEntry>,
-    pub gdt: Vec<u64>,
+    pub gdt: Gdt,
 }
 
 impl Interrupts {
@@ -185,6 +156,18 @@ impl IdtEntry {
     }
 }
 
+/// Descriptor pointer used to load with `lidt` and `lgdt`
+#[repr(C, packed)]
+struct TablePtr {
+    limit: u16,
+    base:  u64,
+}
+
+impl TablePtr {
+    fn new(limit: u16, base: u64) -> Self {
+        Self { limit, base }
+    }
+}
 
 /// Switch to a kernel-based GDT, load a TSS with a critical stack for #DF, #MC
 /// and NMI interrupts and setup an IDT.
@@ -193,43 +176,13 @@ pub fn init() {
     let mut interrupts = unsafe { core!().interrupts().lock() };
     assert!(interrupts.is_none(), "Interrupts already initialized!");
 
-    // Create a new TSS
-    let mut tss: Box<Tss> = Box::new(Tss::default());
-
-    // Create a 32 KiB critical stack for #DF, #MC and NMI
-    let crit_stack: ManuallyDrop<Vec<u8>> = ManuallyDrop::new(
-        Vec::with_capacity(32 * 1024));
-    tss.ist[0] = crit_stack.as_ptr() as u64 + crit_stack.capacity() as u64;
-
-    // Create a kernel GDT. Since the bootloader is in long mode, we should be
-    // able to use the kernel GDT with the bootloader as well.
-    // If you ever change anything, don't forget to update the IDT entries below
-    let mut gdt: Vec<u64> = vec![
-        0x0000000000000000, // 0x00 | null
-        0x00009A008000FFFF, // 0x08 | 16-bit, present, code, base 0x8000
-        0x000092000000FFFF, // 0x10 | 16-bit, present, data, base 0
-        0x00CF9A000000FFFF, // 0x18 | 32-bit, present, code, base 0
-        0x00CF92000000FFFF, // 0x20 | 32-bit, present, data, base 0
-        0x00209A0000000000, // 0x28 | 64-bit, present, code, base 0
-        0x0000920000000000, // 0x30 | 64-bit, present, data, base 0
-    ];
-
-    // Create the task pointer in the GDT
-    let tss_base = &*tss as *const Tss as u64;
-    let tss_low = 0x890000000000 | (((tss_base >> 24) & 0xFF) << 56) |
-        ((tss_base & 0xFFFFFF) << 16) |
-        (core::mem::size_of::<Tss>() as u64 - 1);
-    let tss_high = tss_base >> 32;
-
-    // Push the TSS to into the GDT
-    let tss_entry = (gdt.len() * 8) as u16;
-    gdt.push(tss_low);
-    gdt.push(tss_high);
+    // Create the GDT
+    let (gdt, tss, tss_entry) = Gdt::new();
 
     // Create a pointer to the GDT for lgdt to load
     let gdt_ptr = TablePtr::new(
-        core::mem::size_of_val(&gdt[..]) as u16 - 1,
-        gdt.as_ptr() as u64);
+        core::mem::size_of_val(&gdt.raw[..]) as u16 - 1,
+        gdt.raw.as_ptr() as u64);
 
     // Update the GDT
     unsafe {
@@ -247,6 +200,10 @@ pub fn init() {
             options(nostack, preserves_flags)
         );
     }
+
+    // Get the current long mode entry
+    let (cs, _) = get_selector_indices();
+    let cs = (cs * 8) as u16;
 
     // Create a new IDT
     let mut idt = Vec::with_capacity(256);
@@ -266,7 +223,7 @@ pub fn init() {
 
         // Construct the IDT entry pointing to the default handler
         idt.push(IdtEntry::new(
-            0x28,               // Kernel code segment in the GDT
+            cs,                 // Kernel code segment in the GDT
             handler_addr,       // Address of the handler for all interrupts
             ist,                // IST index
             X64_INTERRUPT_GATE, // Type (interrupt gate)
