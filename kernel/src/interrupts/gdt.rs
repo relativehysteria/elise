@@ -12,11 +12,6 @@
 //! For this reason, we do things in reverse; instead of loading a GDT and
 //! changing the selectors, we create a GDT based on what's already in the
 //! selectors and then load it.
-//!
-//! This is only required for the BSP, because we bring the APs to long mode
-//! ourselves and therefore control the registers, but we'll use the same GDT
-//! for all cores, so effectively, UEFI dictates the shape of our GDT in all
-//! cores.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
