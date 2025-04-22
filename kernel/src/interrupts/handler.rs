@@ -47,7 +47,7 @@ pub unsafe fn soft_reboot_timer(_args: InterruptArgs) -> bool {
     if !core!().is_bsp() { return true; }
 
     // Attempt to get a byte from the serial port
-    let byte = core!().shared.serial.lock().as_mut().unwrap().read_byte();
+    let byte = { core!().shared.serial.lock().as_mut().unwrap().read_byte() };
 
     // TODO: I don't like the fact that these are hardcoded here
 

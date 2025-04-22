@@ -33,11 +33,11 @@ impl Write for SerialShatter {
 
 /// Serial `print!()` support for the bootloader
 #[macro_export] macro_rules! print {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         let _lock = core!().shared.print_lock.lock();
         let _ = <$crate::print::Serial as core::fmt::Write>::write_fmt(
             &mut $crate::print::Serial, format_args!($($arg)*));
-    }
+    }}
 }
 
 /// Serial `print_shatter!()` support for the bootloader
@@ -50,18 +50,18 @@ impl Write for SerialShatter {
 
 /// Serial `println!()` support for the bootloader
 #[macro_export] macro_rules! println {
-    () => {
+    () => {{
         let _lock = core!().shared.print_lock.lock();
         let _ = <$crate::print::Serial as core::fmt::Write>::write_str(
             &mut $crate::print::Serial, "\n"
         );
-    };
-    ($($arg:tt)*) => {
+    }};
+    ($($arg:tt)*) => {{
         let _lock = core!().shared.print_lock.lock();
         let _ = <$crate::print::Serial as core::fmt::Write>::write_fmt(
             &mut $crate::print::Serial, format_args!("{}\n", format_args!($($arg)*))
         );
-    };
+    }};
 }
 
 /// Serial `println_shatter!()` support for the bootloader

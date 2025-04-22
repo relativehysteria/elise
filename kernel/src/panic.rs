@@ -97,11 +97,13 @@ pub fn panic(info: &PanicInfo) -> ! {
     };
 
     // Wait for a soft reboot request to be issued
-    let mut serial = core!().shared.serial.lock();
-    let serial = serial.as_mut().unwrap();
-    while !core!().shared.rebooting.load(Ordering::SeqCst) {
-        if serial.read_byte() == Some(b'S') {
-            core!().shared.rebooting.store(true, Ordering::SeqCst);
+    {
+        let mut serial = core!().shared.serial.lock();
+        let serial = serial.as_mut().unwrap();
+        while !core!().shared.rebooting.load(Ordering::SeqCst) {
+            if serial.read_byte() == Some(b'S') {
+                core!().shared.rebooting.store(true, Ordering::SeqCst);
+            }
         }
     }
 

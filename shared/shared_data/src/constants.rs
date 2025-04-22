@@ -43,7 +43,7 @@ pub const TRAMPOLINE_ADDR: u64 =
     KERNEL_CODE_BASE - (REGION_PADDING + MAX_TRAMPOLINE_SIZE);
 
 /// This is the maximum size in bytes we allow the trampoline code to be;
-pub const MAX_TRAMPOLINE_SIZE: u64 = 0x10_000;
+pub const MAX_TRAMPOLINE_SIZE: u64 = 0x1_0000;
 
 /// The virtual base in the kernel page tables where physical memory is
 /// linearly mapped, such that dereference of `KERNEL_PHYS_WINDOW_BASE` will be

@@ -10,7 +10,7 @@ use crate::interrupts::{Gdt, Tss, get_selector_indices};
 
 /// Indicates whether the interrupt number at index into this array requires an
 /// EOI when handled
-static EOI_REQUIRED: [AtomicBool; 256] =
+pub static EOI_REQUIRED: [AtomicBool; 256] =
     [const { AtomicBool::new(false) }; 256];
 
 /// Inidicates whether we're draining interrupts instead of handling them.
@@ -23,6 +23,25 @@ pub static DRAINING_EOIS: AtomicBool = AtomicBool::new(false);
 /// draining EOIs
 static DRAIN_PRECEDENCE: [AtomicBool; 256] =
     [const { AtomicBool::new(false) }; 256];
+
+/// Returns the bitmask of the `EOI_REQUIRED` array.
+///
+/// Each bit set means that the IVT at that bit index requires an EOI.
+///
+/// There's a race condition; if the `EOI_REQUIRED` array is updated while this
+/// function runs, it might return stale data, and as such is marked unsafe.
+pub unsafe fn eoi_bitmask() -> [u128; 2] {
+    let mut bitmask = [0; 2];
+
+    for i in 0..256 {
+        let idx = i / 128;
+        let bit = i % 128;
+        let val = EOI_REQUIRED[i as usize].load(Ordering::SeqCst);
+        bitmask[idx] |= (val as u128) << bit;
+    }
+
+    bitmask
+}
 
 #[derive(Clone, Copy, Debug)]
 /// The interrupt information passed to all interrupt handlers

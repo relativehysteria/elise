@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use core::sync::atomic::Ordering;
+
 use page_table::{
     PageType, PAGE_NXE, PAGE_WRITE, PAGE_CACHE_DISABLE, PAGE_PRESENT};
 use crate::interrupts::InterruptId;
@@ -120,9 +122,130 @@ impl Apic {
         }
     }
 
+    /// Returns the 256-bits of in-service register state
+    /// Array is [low 128 bits, high 128 bits]
+    pub unsafe fn isr(&self) -> [u128; 2] {
+        // Storage for the 256-bits of data
+        let mut isr: [u8; 32] = [0; 32];
+
+        // Values to load
+        let to_load = [
+            Register::Isr0, Register::Isr1, Register::Isr2, Register::Isr3,
+            Register::Isr4, Register::Isr5, Register::Isr6, Register::Isr7,
+        ];
+
+        // Read all the registers into `isr`
+        for (ii, &reg) in to_load.iter().enumerate() {
+            unsafe {
+                isr[ii * size_of::<u32>()..(ii + 1) * size_of::<u32>()]
+                    .copy_from_slice(&self.read(reg).to_le_bytes());
+            }
+        }
+
+        // Turn the 32 `u8`s into 2 `u128`s
+        [
+            u128::from_le_bytes(isr[..16].try_into().unwrap()),
+            u128::from_le_bytes(isr[16..].try_into().unwrap()),
+        ]
+    }
+
+    /// Returns the 256-bits of interrupt request register state
+    /// Array is [low 128 bits, high 128 bits]
+    pub unsafe fn irr(&self) -> [u128; 2] {
+        // Storage for the 256-bits of data
+        let mut irr: [u8; 32] = [0; 32];
+
+        // Values to load
+        let to_load = [
+            Register::Irr0, Register::Irr1, Register::Irr2, Register::Irr3,
+            Register::Irr4, Register::Irr5, Register::Irr6, Register::Irr7,
+        ];
+
+        // Read all the registers into `irr`
+        for (ii, &reg) in to_load.iter().enumerate() {
+            unsafe {
+                irr[ii * size_of::<u32>()..(ii + 1) * size_of::<u32>()]
+                    .copy_from_slice(&self.read(reg).to_le_bytes());
+            }
+        }
+
+        // Turn the 32 `u8`s into 2 `u128`s
+        [
+            u128::from_le_bytes(irr[..16].try_into().unwrap()),
+            u128::from_le_bytes(irr[16..].try_into().unwrap()),
+        ]
+    }
+
     /// Reset the APIC to the original state before we took control of it.
     pub unsafe fn reset(&mut self) {
-        unimplemented!();
+        const LVT_MASK: u32 = 1 << 16;
+
+        // Just about everything this function does is unsafe..
+        unsafe {
+        // Disable timer interrupts by masking them off
+        self.write(Register::LvtTimer,
+            self.read(Register::LvtTimer) | LVT_MASK);
+
+        // If there are any timer interrupts in service, EOI them as we're
+        // tearing the APIC down
+        loop {
+            let isr = self.isr();
+
+            // If there are no interrupts being serviced, stop
+            if isr[0] == 0 && isr[1] == 0 { break; }
+
+            // EOI the interrupt
+            Self::eoi();
+        }
+
+        // From now on we'll be draining interrupts instead of handling them.
+        // Interrupts with draining precedence will still be handled
+        crate::interrupts::DRAINING_EOIS.store(true, Ordering::SeqCst);
+
+        // At this point the APIC is software disabled. If there are still any
+        // interrupts requested that require EOI (as APIC interrupts do),
+        // attempt to handle them
+        loop {
+            // Get the bitmasks of pending interrupts and those that require EOI
+            let irr = self.irr();
+            let eoi = crate::interrupts::eoi_bitmask();
+
+            // Check if there are any pending
+            let pending = (irr[0] & eoi[0]) != 0 || (irr[1] & eoi[1]) != 0;
+
+            // Handle them if needed
+            if pending {
+                cpu::enable_interrupts()
+            } else {
+                break;
+            }
+        }
+
+        // Disable interrupts and stop handling them
+        cpu::disable_interrupts();
+
+        // Restore the original APIC timer state
+        {
+            self.write(Register::DivideConfiguration, self.orig.timer.dcr);
+            self.write(Register::LvtTimer, self.orig.timer.lvt);
+            self.write(Register::InitialCount, self.orig.timer.icr);
+        }
+
+        // Load the original SVR
+        self.write(Register::SpuriousInterruptVector, self.orig.svr);
+
+        // Restore the original `IA32_APIC_BASE` to its original state.
+        // Preserving the x2Apic because downgrading it in software may not be
+        // supported.
+        let apic_mode = if let ApicMode::X2Apic = self.mode {
+            IA32_APIC_BASE_EXTD
+        } else { 0 };
+        cpu::wrmsr(IA32_APIC_BASE, self.orig.ia32_apic_base | apic_mode);
+
+        // Reload the PIC's original state
+        cpu::out8(0xA1 as *const u8, self.orig.pic_a1);
+        cpu::out8(0x21 as *const u8, self.orig.pic_21);
+        }
     }
 
     /// Enable the APIC timer which is used to check the serial port

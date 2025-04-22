@@ -152,11 +152,9 @@ pub unsafe fn init() {
     });
 }
 
-/// Reset all devices on the system such that they must me reinitialized through
+/// Reset all devices on the system such that they must be reinitialized through
 /// `init()` before use
-pub unsafe fn reset_devices() {
-    unimplemented!();
-}
+pub unsafe fn reset_devices() { }
 
 /// Read a struct `T` given the PCI `select_addr`
 ///

@@ -258,7 +258,6 @@ unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
     // is initialized as `true`, so if the bootloader runs for the first time,
     // this path will be hit
     if SHARED.is_rebooting() {
-        bootloader::println_shatter!("REBOOTING!");
         unsafe { restore_physical_memory(); }
         load_kernel();
         SHARED.rebooting.store(false, Ordering::SeqCst);
