@@ -17,15 +17,12 @@ use rangeset::RangeSet;
 /// what the memory map state will become
 static MEMORY_SNAPSHOT: OnceLock<RangeSet> = OnceLock::new();
 
-/// Do some setup on the very first initial boot of the bootloader.
-///
-/// Returns `true` if the bootloaderwas already set up.
-fn init_setup(image_handle: efi::BootloaderImagePtr,
-              system_table: efi::SystemTablePtr) -> bool {
-    // If the bootloader has been initialized already, exit
-    static INITIALIZED: AtomicBool = AtomicBool::new(false);
-    if INITIALIZED.load(Ordering::SeqCst) { return true; }
+/// Whether the bootloader has been initialized
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+/// Do some setup on the very first initial boot of the bootloader.
+fn init_setup(image_handle: efi::BootloaderImagePtr,
+              system_table: efi::SystemTablePtr) {
     // Initialize the serial driver
     let mut serial = unsafe { SerialDriver::init() };
     serial.write("─────────────────────────────┐\n".as_bytes());
@@ -70,8 +67,6 @@ fn init_setup(image_handle: efi::BootloaderImagePtr,
 
     // Mark the bootloader as initialized
     INITIALIZED.store(true, Ordering::SeqCst);
-
-    false
 }
 
 /// Restores the physical memory to the snapshot taken during initialization.
@@ -250,10 +245,9 @@ unsafe fn map_kernel_stack() -> VirtAddr {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
                               system_table: efi::SystemTablePtr) {
-    // One time bootloader initialization. If the bootloader was set up already,
-    // restore to physical memory to the snapshot we took on initialization
-    if init_setup(image_handle, system_table) && SHARED.is_rebooting() {
-        unsafe { restore_physical_memory(); }
+    // One time bootloader initialization.
+    if !INITIALIZED.load(Ordering::SeqCst) {
+        init_setup(image_handle, system_table);
     }
 
     // From now on, due to `restore_physical_memory()`, all bootloader virtual
@@ -264,6 +258,8 @@ unsafe extern "C" fn efi_main(image_handle: efi::BootloaderImagePtr,
     // is initialized as `true`, so if the bootloader runs for the first time,
     // this path will be hit
     if SHARED.is_rebooting() {
+        bootloader::println_shatter!("REBOOTING!");
+        unsafe { restore_physical_memory(); }
         load_kernel();
         SHARED.rebooting.store(false, Ordering::SeqCst);
     }
