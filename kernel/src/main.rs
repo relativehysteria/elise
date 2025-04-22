@@ -8,6 +8,9 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // Initialize core locals
     kernel::core_locals::init(shared);
 
+    // Disable interrupts just to match the `enable_interrupts()` call later
+    unsafe { kernel::core!().disable_interrupts(); }
+
     // Initialize the interrupts
     kernel::interrupts::init();
 
@@ -33,10 +36,11 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
         }
     }
 
+    // The core is ready, enable interrupts!
+    unsafe { kernel::core!().enable_interrupts(); }
+
     // Check in that this core has booted and is ready!
     kernel::acpi::apic::check_in();
 
-    loop { unsafe { core::arch::asm!("hlt"); } }
-
-    panic!();
+    loop { unsafe { cpu::halt(); } }
 }

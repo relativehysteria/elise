@@ -8,10 +8,12 @@ pub use features::*;
 use core::arch::asm;
 
 #[inline]
-/// Disables interrupts and halts the core
+/// Halts the core in a loop forever
 pub unsafe fn halt() -> ! {
-    unsafe { asm!("cli", "hlt"); }
-    loop { core::hint::spin_loop(); }
+    loop {
+        unsafe { asm!("hlt"); }
+        core::hint::spin_loop();
+    }
 }
 
 #[inline]

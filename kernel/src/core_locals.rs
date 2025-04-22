@@ -160,6 +160,7 @@ impl CoreLocals {
         self.exception_depth.count() != 0
     }
 
+    #[track_caller]
     /// Disable interrupts in a nesting manner.
     ///
     /// The "nesting manner" here means that if multiple `disable_interrupts()`
@@ -171,6 +172,7 @@ impl CoreLocals {
         unsafe { cpu::disable_interrupts(); }
     }
 
+    #[track_caller]
     /// Enable interrupts in a nesting manner.
     ///
     /// As many `enable_interrupts()` must be called as there have been
