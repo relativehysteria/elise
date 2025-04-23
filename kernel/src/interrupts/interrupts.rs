@@ -368,7 +368,7 @@ Unhandled interrupt <{id:X?}>, error code <{error:#X}> on core <{core_id}>
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 #[repr(u8)]
-/// Recognized Interrupt identifiers
+/// Legacy ISA interrupt identifiers
 pub enum InterruptId {
     DivideBy0 = 0x00,
     // Reserved = 0x01,
