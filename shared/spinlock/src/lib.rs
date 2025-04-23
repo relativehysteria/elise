@@ -93,13 +93,6 @@ impl<T, I: InterruptState> SpinLock<T, I> {
 }
 
 impl<T: ?Sized, I: InterruptState> SpinLock<T, I> {
-    pub fn vals(&self) -> (usize, usize) {
-        (
-            self.ticket.load(Ordering::SeqCst),
-            self.release.load(Ordering::SeqCst)
-        )
-    }
-
     #[track_caller]
     /// Acquire exclusive access to the variable guarded by this spinlock
     pub fn lock(&self) -> SpinLockGuard<T, I> {
