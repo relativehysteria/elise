@@ -154,7 +154,11 @@ pub unsafe fn init() {
 
 /// Reset all devices on the system such that they must be reinitialized through
 /// `init()` before use
-pub unsafe fn reset_devices() { }
+pub unsafe fn reset_devices() {
+    unsafe { &mut *DEVICES.shatter() }
+        .iter_mut()
+        .for_each(|dev| dev.purge())
+}
 
 /// Read a struct `T` given the PCI `select_addr`
 ///

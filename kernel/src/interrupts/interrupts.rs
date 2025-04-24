@@ -74,7 +74,6 @@ impl<'a> InterruptArgs<'a> {
 }
 
 /// Interrupt dispatch routine.
-/// Arguments are (interrupt number, frame, error code, register state at int)
 ///
 /// Returns `true` if the interrupt was handled, and execution should continue
 type InterruptDispatch = unsafe fn(InterruptArgs) -> bool;
@@ -82,6 +81,7 @@ type InterruptDispatch = unsafe fn(InterruptArgs) -> bool;
 /// Structure to hold different dispatch routines for interrupts
 pub struct Interrupts {
     dispatch: [Option<InterruptDispatch>; 256],
+    //dispatch: [(InterruptId, Option<InterruptDispatch>); 256]
     pub tss: Box<Tss>,
     pub idt: Vec<IdtEntry>,
     pub gdt: Gdt,
