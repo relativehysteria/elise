@@ -111,7 +111,7 @@ pub unsafe fn init() {
         })
     }).for_each(|(bus, device, function)| {
         // Compute the address for this Bus:Device.Function
-        let pci_addr = (bus << 8) | (device << 3) | (function << 0);
+        let pci_addr = (bus << 8) | (device << 3) | function;
 
         // Compute the PCI selection address for this BDF
         let select_addr = (1 << 31) | (pci_addr << 8);
@@ -181,6 +181,5 @@ unsafe fn read_pci_registers<T>(select_addr: u32)
     }
 
     // Transmute the array into the desired type
-    let data = unsafe { core::ptr::read_unaligned(data.as_ptr() as *const T) };
-    data
+    unsafe { core::ptr::read_unaligned(data.as_ptr() as *const T) }
 }

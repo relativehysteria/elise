@@ -51,7 +51,7 @@ impl Gdt {
         assert!(cs_idx != 0, "CS and DS can't be at index 0 in the GDT!");
 
         // This is the index where we'll insert the rest of the selectors
-        let insert_idx = (cs_idx.max(ds_idx) + 1) as usize;
+        let insert_idx = cs_idx.max(ds_idx) + 1;
 
         // Create the GDT with enough space for the rest of the descriptors
         let mut gdt = vec![0x0u64; insert_idx];
@@ -61,7 +61,7 @@ impl Gdt {
         gdt[ds_idx] = 0x0000920000000000; // 64-bit, present, data
 
         // Create a new TSS
-        let mut tss: Box<Tss> = Box::new(Tss::default());
+        let mut tss: Box<Tss> = Box::default();
 
         // Create a 32 KiB critical stack for #DF, #MC and NMI
         let crit_stack: ManuallyDrop<Vec<u8>> = ManuallyDrop::new(

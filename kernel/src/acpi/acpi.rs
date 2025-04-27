@@ -28,9 +28,9 @@ impl Table {
     /// Tries to turn a signature into a recognized table type
     pub fn from_sig(signature: &[u8; 4]) -> Self {
         match signature {
-            b"APIC" => Self::Madt,
-            b"SRAT" => Self::Srat,
-            _______ => Self::Unknown(*signature),
+            b"APIC"  => Self::Madt,
+            b"SRAT"  => Self::Srat,
+            _unknown => Self::Unknown(*signature),
         }
     }
 }
@@ -114,8 +114,8 @@ pub unsafe fn parse_table_entries(hdr_ptr: *const SdtHeader, offset: usize)
 
     // Go through each entry and get its type, its length and the pointer to it
     while ptr < end {
-        let typ = unsafe { read_unaligned(ptr.add(0) as *const u8) };
-        let len = unsafe { read_unaligned(ptr.add(1) as *const u8) };
+        let typ = unsafe { read_unaligned(ptr.add(0)) };
+        let len = unsafe { read_unaligned(ptr.add(1)) };
 
         // Make sure there's space for the entry
         if len < 2 { return Err(Error::SizeMismatch(table_type)); }
@@ -137,13 +137,13 @@ pub unsafe fn init() -> Result<(), Error> {
     let mut srat: Option<Srat> = None;
 
     // Get the physical pointer to the SDTs and offset it into our phys window
-    let sdt_table = core!().shared.acpi().get().clone();
+    let sdt_table = *core!().shared.acpi().get();
     let base = phys_ptr(sdt_table.base).0;
 
     // Go through each SDT and parse it
     for entry in 0..sdt_table.n_entries {
         // Get the pointer to the table
-        let offset = (entry as usize).checked_mul(size_of::<u64>())
+        let offset = entry.checked_mul(size_of::<u64>())
             .expect("Overflow when offseting into physical window");
         let table_ptr = (base as usize).checked_add(offset)
             .expect("Base virtual address overflow");

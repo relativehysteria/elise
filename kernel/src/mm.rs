@@ -46,8 +46,8 @@ pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
 
     // Initialize the memory
     for core in 0..MAX_CORES {
-        let foo = mappings.as_mut_ptr() as *mut Option<RangeSet>;
-        unsafe { core::ptr::write(foo.offset(core as isize), None); }
+        let x = mappings.as_mut_ptr() as *mut Option<RangeSet>;
+        unsafe { core::ptr::write(x.add(core), None); }
     }
 
     // Mark the mappings as initialized
@@ -55,7 +55,7 @@ pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
 
     // Go through each APIC to domain mapping and store it in the database
     ad.iter().for_each(|(&apic, domain)| {
-        mappings[apic as usize] = md.remove(domain).and_then(|rs| Some(rs))
+        mappings[apic as usize] = md.remove(domain)
     });
 
     // Store the apic mapping database as global!
@@ -302,7 +302,7 @@ impl FreeList {
             // Just grab the free entry
             let allocation = unsafe {
                 *list.free_addrs.as_mut_ptr()
-                    .offset(list.free_slots as isize)
+                    .add(list.free_slots)
             };
 
             // Update the number of free slots
@@ -368,7 +368,7 @@ impl FreeList {
         // Store our newly freed virtual address into this slot
         unsafe {
             *list.free_addrs.as_mut_ptr()
-                .offset(list.free_slots as isize) = vaddr;
+                .add(list.free_slots) = vaddr;
         }
     }
 }

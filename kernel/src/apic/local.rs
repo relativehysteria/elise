@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use core::sync::atomic::Ordering;
+use const_assert::const_assert;
 use page_table::{
     PageType, PAGE_NXE, PAGE_WRITE, PAGE_CACHE_DISABLE, PAGE_PRESENT};
 use crate::interrupts::InterruptId;
@@ -19,6 +20,10 @@ const IA32_APIC_BASE: u32 = 0x1B;
 /// The physical address we want the local APIC to be mapped at. This should be
 /// the standard base unless someone relocated it..
 const APIC_BASE: u64 = 0xFEE0_0000;
+
+// Validate the APIC base at compile time
+const_assert!(
+    APIC_BASE > 0 && APIC_BASE == (APIC_BASE & 0x0000_000f_ffff_f000));
 
 /// Local APIC
 pub struct LocalApic {
@@ -98,7 +103,7 @@ impl LocalApic {
 
                     // Write the low part, causing the interrupt to be sent
                     core::ptr::write_volatile(&mut mapping[0x300 / 4],
-                                              (val >>  0) as u32);
+                                              val as u32);
                 }
                 ApicMode::X2Apic => {
                     // Write the entire 64-bit value in one shot
@@ -394,10 +399,6 @@ pub enum Register {
 ///
 /// If supported, will use x2APIC
 pub unsafe fn init() {
-    // Validate the APIC base
-    assert!(APIC_BASE > 0 && APIC_BASE == (APIC_BASE & 0x0000_000f_ffff_f000),
-            "Invalid APIC base address");
-
     // Don't reinitialize the APIC
     let mut cur_apic = unsafe { core!().apic().lock() };
     assert!(cur_apic.is_none(), "APIC already initialized!");

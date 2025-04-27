@@ -4,8 +4,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::arch::asm;
-use crate::interrupts::{handler, INT_HANDLERS, AllRegs};
-use crate::interrupts::{Gdt, Tss, get_selector_indices};
+use crate::interrupts::{
+    handler, INT_HANDLERS, AllRegs, Gdt, Tss, get_selector_indices};
 use crate::apic::LocalApic;
 
 /// Indicates whether the interrupt number at index into this array requires an
@@ -33,11 +33,10 @@ static DRAIN_PRECEDENCE: [AtomicBool; 256] =
 pub unsafe fn eoi_bitmask() -> [u128; 2] {
     let mut bitmask = [0; 2];
 
-    for i in 0..256 {
+    for (i, eoi) in EOI_REQUIRED.iter().enumerate() {
         let idx = i / 128;
         let bit = i % 128;
-        let val = EOI_REQUIRED[i as usize].load(Ordering::SeqCst);
-        bitmask[idx] |= (val as u128) << bit;
+        bitmask[idx] |= (eoi.load(Ordering::SeqCst) as u128) << bit;
     }
 
     bitmask
@@ -157,10 +156,12 @@ impl IdtEntry {
     /// take the `cs:offset` to the handler address, the `ist` for the
     /// interrupt stack table index, the `typ` of the IDT gate entry and the
     /// `dpl` of the IDT entry.
-    fn new(cs: u16, offset: u64, ist: u32, typ: u32, dpl: u8) -> Self {
+    fn new(cs: u16, offset: usize, ist: u32, typ: u32, dpl: u8) -> Self {
         assert!(ist <  8, "Invalid IdtEntry IST");
         assert!(typ < 32, "Invalid IdtEntry type");
         assert!(dpl <  4, "Invalid IdtEntry dpl");
+
+        let offset = offset as u64;
 
         Self {
             offset_low:  (offset & 0xFFFF) as u16,
@@ -224,8 +225,8 @@ pub fn init() {
     let cs = (cs * 8) as u16;
 
     // Create a new IDT
-    let mut idt = Vec::with_capacity(256);
-    for id in 0..idt.capacity() {
+    let mut idt = Vec::with_capacity(INT_HANDLERS.len());
+    for (id, &handler) in INT_HANDLERS.iter().enumerate().take(idt.capacity()) {
         let ist = match id {
             // NMI, #DF, #MC use the IST
             2 | 8 | 18 => { 1 },
@@ -237,12 +238,10 @@ pub fn init() {
         /// Interrupt gate type for 64-bit mode
         const X64_INTERRUPT_GATE: u32 = 0xE;
 
-        let handler_addr = INT_HANDLERS[id] as u64;
-
         // Construct the IDT entry pointing to the default handler
         idt.push(IdtEntry::new(
             cs,                 // Kernel code segment in the GDT
-            handler_addr,       // Address of the handler for all interrupts
+            handler as usize,   // Address of the handler for all interrupts
             ist,                // IST index
             X64_INTERRUPT_GATE, // Type (interrupt gate)
             0                   // DPL
@@ -304,7 +303,7 @@ unsafe extern "sysv64" fn interrupt_entry(
                 .as_ref()
                 .unwrap()
                 .dispatch[idx]
-                .map_or(false, |handler| handler(args))
+                .is_some_and(|handler| handler(args))
         }
     } else {
         false

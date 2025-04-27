@@ -2,6 +2,7 @@
 
 #![no_std]
 #![allow(internal_features, incomplete_features)]
+#![allow(clippy::missing_safety_doc, clippy::module_inception)]
 #![feature(alloc_error_handler)]
 #![feature(generic_const_exprs)]
 #![feature(lang_items)]

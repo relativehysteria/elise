@@ -23,7 +23,7 @@ static APIC_STATES: [AtomicU8; MAX_CORES] =
 static TOTAL_CORES: AtomicU32 = AtomicU32::new(0);
 
 /// The real mode code all APs start their execution at
-static ENTRY_CODE: &'static [u8] =
+static ENTRY_CODE: &[u8] =
     include_bytes!("../../target/apic_entry.bin");
 
 /// The real mode address where `AP_ENTRY_CODE` will be mapped. This value is

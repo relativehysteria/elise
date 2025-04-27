@@ -1,4 +1,4 @@
-pub mod interrupts;
+mod interrupts;
 pub mod handler;
 pub mod gdt;
 mod definitions;
