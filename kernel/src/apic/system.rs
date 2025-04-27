@@ -16,10 +16,10 @@ use crate::mm::slice_phys_mut;
 static APIC_STATES: OnceLock<&[AtomicU8]> = OnceLock::new();
 
 /// The total amount of cores on the system
-static TOTAL_CORES: AtomicU32 = AtomicU32::new(0);
+static TOTAL_CORES: OnceLock<u32> = OnceLock::new();
 
 /// The maximum APIC ID registered in the system
-pub static MAX_APIC_ID: AtomicU32 = AtomicU32::new(0);
+pub static MAX_APIC_ID: OnceLock<u32> = OnceLock::new();
 
 /// The real mode code all APs start their execution at
 static ENTRY_CODE: &[u8] =
@@ -57,7 +57,7 @@ pub fn check_in() {
     CORES_CHECKED_IN.fetch_add(1, Ordering::SeqCst);
 
     // Get the total number of cores on the system
-    let num_cores = TOTAL_CORES.load(Ordering::SeqCst);
+    let num_cores = *TOTAL_CORES.get();
     assert!(num_cores != 0, "Called `check_in()` before ACPI was parsed!");
 
     // Wait for all cores to be checked in
@@ -121,7 +121,7 @@ impl From<u8> for ApicState {
 /// Initialize and bring up the other cores on the system
 pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
     // Allcoate the state tracking global
-    let max_id = MAX_APIC_ID.load(Ordering::SeqCst);
+    let max_id = *MAX_APIC_ID.get();
     let states = (0..=max_id)
         .map(|_| AtomicU8::new(ApicState::None as u8))
         .collect::<Vec<AtomicU8>>();
@@ -139,7 +139,7 @@ pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
 
     // Save the total number of cores on the system. This will be used during
     // the `check_in()` loop to wait for all cores to come online.
-    TOTAL_CORES.store(apics.len() as u32, Ordering::SeqCst);
+    TOTAL_CORES.set(apics.len() as u32);
 
     // Map in the AP entry code
     let code_len = ENTRY_CODE.len();

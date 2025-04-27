@@ -1,7 +1,6 @@
 //! Routines for the parsing of ACPI tables and such
 
 use alloc::vec::Vec;
-use core::sync::atomic::Ordering;
 use core::mem::size_of;
 use core::ptr::read_unaligned;
 
@@ -185,7 +184,7 @@ pub unsafe fn init() -> Result<(), Error> {
     let max_id = madt.as_ref()
         .map(|x| x.apics.iter().fold(0, |x, &y| x.max(y)))
         .unwrap_or(0);
-    crate::apic::MAX_APIC_ID.store(max_id, Ordering::SeqCst);
+    crate::apic::MAX_APIC_ID.set(max_id);
 
     // Inform the memory manager of our NUMA topology
     if let Some(srat) = srat {

@@ -39,7 +39,7 @@ pub fn mem_range<'a>() -> Option<&'a RangeSet> {
 /// allocations will be NUMA aware.
 pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
     // Make sure we're not registering numa with bogus data
-    let max_apic_id = MAX_APIC_ID.load(Ordering::SeqCst);
+    let max_apic_id = *MAX_APIC_ID.get();
     assert!(max_apic_id != 0, "Registering NUMA before parsing ACPI");
 
     // Allocate the database
