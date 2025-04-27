@@ -3,7 +3,9 @@
 use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::read_unaligned;
+
 use page_table::PhysAddr;
+
 use crate::acpi::{Error, Madt, Srat};
 use crate::apic;
 use crate::mm::{phys_ptr, register_numa};

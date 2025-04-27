@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicPtr, AtomicBool, Ordering};
 use core::panic::PanicInfo;
+
 use crate::apic::{ApicState, core_state, MAX_CORES, LocalApic};
 
 /// Tracks whether we're currently in the process of a panic on the BSP

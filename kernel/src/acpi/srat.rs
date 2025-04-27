@@ -1,7 +1,9 @@
 //! SRAT implementation
 
 use alloc::collections::BTreeMap;
+
 use rangeset::{Range, RangeSet};
+
 use crate::acpi::{SdtHeader, Error, Table, ENABLED, parse_table_entries};
 
 /// Information returned when parsing the SRAT table

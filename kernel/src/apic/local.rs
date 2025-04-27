@@ -3,9 +3,11 @@
 #![allow(dead_code)]
 
 use core::sync::atomic::Ordering;
+
 use const_assert::const_assert;
 use page_table::{
     PageType, PAGE_NXE, PAGE_WRITE, PAGE_CACHE_DISABLE, PAGE_PRESENT};
+
 use crate::interrupts::InterruptId;
 
 /// The x2APIC enable bit in the `IA32_APIC_BASE` MSR

@@ -1,11 +1,13 @@
 //! Routines and structures for manipulating APIC states
 
-use core::sync::atomic::{Ordering, AtomicU32, AtomicU8};
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
+use core::sync::atomic::{Ordering, AtomicU32, AtomicU8};
+
 use page_table::PhysAddr;
 use rangeset::RangeSet;
 use shared_data::BootloaderState;
+
 use crate::acpi::Error;
 use crate::mm::slice_phys_mut;
 

@@ -5,12 +5,14 @@ use core::mem::MaybeUninit;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::alloc::{GlobalAlloc, Layout};
+
 use oncelock::OnceLock;
 use page_table::{
     PhysMem, PhysAddr, VirtAddr, MapRequest, Permissions, PageType};
 use shared_data::{
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE, KERNEL_VMEM_BASE};
 use rangeset::RangeSet;
+
 use crate::apic::{ApicDomains, MemoryDomains, MAX_CORES};
 
 /// Represents a mapping from APIC IDs to optional memory range sets for NUMA

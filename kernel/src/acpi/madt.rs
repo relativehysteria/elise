@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
+
 use crate::apic::ioapic::IoApic;
 use crate::acpi::{SdtHeader, Error, Table, ENABLED, parse_table_entries};
 
@@ -28,7 +29,7 @@ impl Madt {
         };
 
         // Create the info struct that will be returned
-        let mut madt = Madt {
+        let mut madt = Self {
             apics: Vec::new(),
             io_apics: Vec::new(),
             isa_overrides: BTreeMap::new(),
@@ -67,27 +68,26 @@ impl Madt {
                     // Save the struct
                     madt.io_apics.push(IoApic::new(id, addr, gsi));
                 },
-                // // Interrupt Source Override
-                // 2 => {
-                //     // Validate the length
-                //     if entry.len != 10 { return mismatch_err; }
+                // Interrupt Source Override
+                2 => {
+                    // Validate the length
+                    if entry.len != 10 { return mismatch_err; }
 
-                //     // Read the source int, dest int and the flags
-                //     let source = entry.read::<u8>(3);
-                //     let gsi    = entry.read::<u32>(4);
-                //     let flags  = entry.read::<u16>(8);
+                    // Read the source int, dest int and the flags
+                    let source = entry.read::<u8>(3);
+                    let gsi    = entry.read::<u32>(4);
+                    let flags  = entry.read::<u16>(8);
 
-                //     // Only support interrupts that conform to the bus spec
-                //     // TODO: HANDLE FLAGS
-                //     if flags != 0 { return Err(Error::UnhandledFlags); }
+                    // TODO: Handle flags
+                    if flags != 0 { return Err(Error::UnhandledFlags); }
 
-                //     // Insert the override and make sure this entry is unique
-                //     if let Some(orig) = madt.isa_overrides.insert(source, gsi) {
-                //         if orig != gsi {
-                //             panic!("Multiple GSIs specified for ISA override.");
-                //         }
-                //     }
-                // },
+                    // Insert the override and make sure this entry is unique
+                    if let Some(orig) = madt.isa_overrides.insert(source, gsi) {
+                        if orig != gsi {
+                            panic!("Multiple GSIs specified for ISA override.");
+                        }
+                    }
+                },
                 // Local x2APIC
                 9 => {
                     // Validate the length

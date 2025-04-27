@@ -3,6 +3,7 @@
 #![allow(unused_variables)]
 
 use core::sync::atomic::Ordering;
+
 use crate::interrupts::InterruptArgs;
 use crate::panic::bsp_in_panic;
 use crate::apic::{set_core_state, ApicState};
