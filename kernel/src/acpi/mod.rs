@@ -2,7 +2,11 @@
 
 pub mod acpi;
 pub mod apic;
+mod madt;
+mod srat;
 
+pub use srat::*;
+pub use madt::*;
 pub use acpi::*;
 
 #[derive(Debug)]
@@ -19,6 +23,9 @@ pub enum Error {
 
     /// Unexpected table checksum
     ChecksumMismatch(Table),
+
+    /// We got flags that the kernel can't handled
+    UnhandledFlags,
 
     /// While parsing the memory proximity domain to physical memory ranges
     /// affinity, the physical memory range was larger than a `usize`.

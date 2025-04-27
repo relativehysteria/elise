@@ -6,7 +6,7 @@ use alloc::collections::BTreeMap;
 use page_table::PhysAddr;
 use rangeset::RangeSet;
 use shared_data::BootloaderState;
-use crate::acpi::Error;
+use crate::acpi::{Error, Srat};
 use crate::mm::slice_phys_mut;
 
 /// Maximum number of cores supported by the system.
@@ -125,13 +125,15 @@ impl From<u8> for ApicState {
 /// Initialize the NUMA mappings and register them with the memory manager,
 /// and also initialize and bring up the other cores on the system
 pub fn init(
-    apics: Option<Vec<u32>>,
-    apic_domains: Option<ApicDomains>,
-    mem_domains: Option<MemoryDomains>,
+    apics: Vec<u32>,
+    srat: Option<Srat>,
 ) -> Result<(), Error> {
     // Register the APIC IDs to their memory domains and notify the memory
     // manager about the NUMA mappings
-    if let (Some(ad), Some(md)) = (apic_domains, mem_domains) {
+    if let Some(srat) = srat {
+        let ad = srat.apic_to_domain;
+        let md = srat.domain_to_ranges;
+
         ad.iter().for_each(|(&apic, &domain)| {
             APIC_TO_MEM_DOMAIN[apic as usize]
                 .store(domain, Ordering::Relaxed);
@@ -142,12 +144,10 @@ pub fn init(
     }
 
     // Initialize the state of all functional APICs
-    if let Some(apics) = &apics {
-        apics.iter().for_each(|&apic_id| {
-            APIC_STATES[apic_id as usize]
-                .store(ApicState::Offline as u8, Ordering::SeqCst)
-        })
-    }
+    apics.iter().for_each(|&apic_id| {
+        APIC_STATES[apic_id as usize]
+            .store(ApicState::Offline as u8, Ordering::SeqCst)
+    });
 
     // Mark the current core as online
     let cur_id = unsafe { core!().apic_id().unwrap() };
@@ -155,9 +155,7 @@ pub fn init(
 
     // Save the total number of cores on the system. This will be used during
     // the `check_in()` loop to wait for all cores to come online.
-    TOTAL_CORES.store(
-        apics.as_ref().map(|x| x.len() as u32).unwrap_or(1),
-        Ordering::SeqCst);
+    TOTAL_CORES.store(apics.len() as u32, Ordering::SeqCst);
 
     // Map in the AP entry code
     let code_len = ENTRY_CODE.len();
@@ -177,30 +175,29 @@ pub fn init(
         );
     }
 
-    // Launch all other cores
-    if let Some(apics) = apics {
-        // Acquire exclusive access to the APIC for this core
-        let mut apic = unsafe { core!().apic().lock() };
-        let apic = apic.as_mut().unwrap();
+    // Launch all other cores.
 
-        // Go through all APICs on the system, skipping this core
-        for &id in apics.iter().filter(|&&id| id != cur_id) {
-            // Mark the core as launched
-            unsafe { set_core_state(id, ApicState::Launched); }
+    // Acquire exclusive access to the APIC for this core
+    let mut apic = unsafe { core!().apic().lock() };
+    let apic = apic.as_mut().unwrap();
 
-            // INIT-SIPI-SIPI; launch the core
-            let entry = (ENTRY_ADDR / 0x1000) as u32;
-            unsafe {
-                apic.ipi(id, 0x4500);
-                apic.ipi(id, 0x4600 + entry);
-                apic.ipi(id, 0x4600 + entry);
-            }
+    // Go through all APICs on the system, skipping this core
+    for &id in apics.iter().filter(|&&id| id != cur_id) {
+        // Mark the core as launched
+        unsafe { set_core_state(id, ApicState::Launched); }
 
-            // Wait for the core to come online
-            while core_state(id) != ApicState::Online {
-                crate::time::sleep(1_000);
-                core::hint::spin_loop();
-            }
+        // INIT-SIPI-SIPI; launch the core
+        let entry = (ENTRY_ADDR / 0x1000) as u32;
+        unsafe {
+            apic.ipi(id, 0x4500);
+            apic.ipi(id, 0x4600 + entry);
+            apic.ipi(id, 0x4600 + entry);
+        }
+
+        // Wait for the core to come online
+        while core_state(id) != ApicState::Online {
+            crate::time::sleep(1_000);
+            core::hint::spin_loop();
         }
     }
 
