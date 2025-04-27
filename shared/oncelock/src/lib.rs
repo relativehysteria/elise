@@ -31,6 +31,7 @@ impl<T> OnceLock<T> {
         }
     }
 
+    #[track_caller]
     /// Returns the value in this lock.
     ///
     /// Panics if the value hasn't been set yet.

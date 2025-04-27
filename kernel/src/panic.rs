@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicPtr, AtomicBool, Ordering};
 use core::panic::PanicInfo;
 
-use crate::apic::{ApicState, core_state, MAX_CORES, LocalApic};
+use crate::apic::{ApicState, core_state, MAX_APIC_ID, LocalApic};
 
 /// Tracks whether we're currently in the process of a panic on the BSP
 static BSP_IN_PANIC: AtomicBool = AtomicBool::new(false);
@@ -118,7 +118,7 @@ unsafe fn disable_cores(apic: &mut LocalApic) {
 
     // Send out NMIs to all non-BSP cores and wait for them to halt
     if let Some(bsp_id) = unsafe { core!().apic_id() } {
-        for id in 0..MAX_CORES as u32 {
+        for id in 0..MAX_APIC_ID.load(Ordering::SeqCst) {
             // Don't NMI the BSP
             if id == bsp_id { continue; }
 

@@ -1,7 +1,6 @@
 //! Kernel memory allocation routines and structures
 
-use alloc::boxed::Box;
-use core::mem::MaybeUninit;
+use alloc::vec::Vec;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::alloc::{GlobalAlloc, Layout};
@@ -13,19 +12,15 @@ use shared_data::{
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE, KERNEL_VMEM_BASE};
 use rangeset::RangeSet;
 
-use crate::apic::{ApicDomains, MemoryDomains, MAX_CORES};
+use crate::apic::{ApicDomains, MemoryDomains, MAX_APIC_ID};
 
-/// Represents a mapping from APIC IDs to optional memory range sets for NUMA
-/// nodes.
+/// Mappings of APIC IDs to their NUMA node memory ranges
 ///
 /// Each index in the array corresponds to a logical core (by APIC ID), and the
 /// associated `Option<RangeSet>` contains the memory ranges (if any) assigned
 /// to the NUMA node associated with that APIC ID. If a particular core has no
 /// associated memory range, the entry will be `None`.
-type ApicToMemRange = [Option<RangeSet>; MAX_CORES];
-
-/// Mappings of APIC IDs to their NUMA node memory ranges
-static APIC_TO_MEM_RANGE: OnceLock<&'static ApicToMemRange> = OnceLock::new();
+static APIC_TO_MEM_RANGE: OnceLock<&[Option<RangeSet>]> = OnceLock::new();
 
 /// Get the preferred memory range for the currently running APIC.
 /// Returns none if there's no valid APIC ID or we have no knowledge of NUMA.
@@ -43,17 +38,14 @@ pub fn mem_range<'a>() -> Option<&'a RangeSet> {
 /// Registers NUMA mappings with the allocator. From this call on, all
 /// allocations will be NUMA aware.
 pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
-    // Create a heap-based database
-    let mut mappings: Box<MaybeUninit<ApicToMemRange>> = Box::new_uninit();
+    // Make sure we're not registering numa with bogus data
+    let max_apic_id = MAX_APIC_ID.load(Ordering::SeqCst);
+    assert!(max_apic_id != 0, "Registering NUMA before parsing ACPI");
 
-    // Initialize the memory
-    for core in 0..MAX_CORES {
-        let x = mappings.as_mut_ptr() as *mut Option<RangeSet>;
-        unsafe { core::ptr::write(x.add(core), None); }
-    }
-
-    // Mark the mappings as initialized
-    let mut mappings = unsafe { mappings.assume_init() };
+    // Allocate the database
+    let mut mappings = (0..=max_apic_id)
+        .map(|_| None)
+        .collect::<Vec<Option<RangeSet>>>();
 
     // Go through each APIC to domain mapping and store it in the database
     ad.iter().for_each(|(&apic, domain)| {
@@ -61,7 +53,7 @@ pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
     });
 
     // Store the apic mapping database as global!
-    unsafe { APIC_TO_MEM_RANGE.set(&*Box::into_raw(mappings)) };
+    APIC_TO_MEM_RANGE.set(mappings.leak());
 }
 
 #[track_caller]

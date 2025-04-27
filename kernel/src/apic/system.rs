@@ -7,22 +7,19 @@ use core::sync::atomic::{Ordering, AtomicU32, AtomicU8};
 use page_table::PhysAddr;
 use rangeset::RangeSet;
 use shared_data::BootloaderState;
+use oncelock::OnceLock;
 
 use crate::acpi::Error;
 use crate::mm::slice_phys_mut;
 
-/// Maximum number of cores supported by the system.
-///
-/// This value can be technically arbitrarily large. However, large values will
-/// cause the global APIC/core tracking variables to grow large as well.
-pub const MAX_CORES: usize = 1024;
-
 /// Map of the APIC IDs to their APIC states.
-static APIC_STATES: [AtomicU8; MAX_CORES] =
-    [const { AtomicU8::new(ApicState::None as u8) }; MAX_CORES];
+static APIC_STATES: OnceLock<&[AtomicU8]> = OnceLock::new();
 
 /// The total amount of cores on the system
 static TOTAL_CORES: AtomicU32 = AtomicU32::new(0);
+
+/// The maximum APIC ID registered in the system
+pub static MAX_APIC_ID: AtomicU32 = AtomicU32::new(0);
 
 /// The real mode code all APs start their execution at
 static ENTRY_CODE: &[u8] =
@@ -38,7 +35,8 @@ pub fn check_in() {
     static CORES_CHECKED_IN: AtomicU32 = AtomicU32::new(0);
 
     // Transition from launched to online
-    let old_state = APIC_STATES[unsafe { core!().apic_id().unwrap() as usize }]
+    let apic_id = unsafe { core!().apic_id().unwrap() as usize };
+    let old_state = APIC_STATES.get()[apic_id]
         .compare_exchange(ApicState::Launched as u8,
                           ApicState::Online   as u8,
                           Ordering::SeqCst,
@@ -68,14 +66,16 @@ pub fn check_in() {
     }
 }
 
+#[track_caller]
 /// Set the current execution state of a given APIC ID
 pub unsafe fn set_core_state(id: u32, state: ApicState) {
-    APIC_STATES[id as usize].store(state as u8, Ordering::SeqCst);
+    APIC_STATES.get()[id as usize].store(state as u8, Ordering::SeqCst);
 }
 
+#[track_caller]
 /// Get the APIC state of a given APIC ID
 pub fn core_state(id: u32) -> ApicState {
-    APIC_STATES[id as usize].load(Ordering::SeqCst).into()
+    APIC_STATES.get()[id as usize].load(Ordering::SeqCst).into()
 }
 
 /// APIC to memory domain mapping
@@ -120,9 +120,16 @@ impl From<u8> for ApicState {
 
 /// Initialize and bring up the other cores on the system
 pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
+    // Allcoate the state tracking global
+    let max_id = MAX_APIC_ID.load(Ordering::SeqCst);
+    let states = (0..=max_id)
+        .map(|_| AtomicU8::new(ApicState::None as u8))
+        .collect::<Vec<AtomicU8>>();
+    APIC_STATES.set(states.leak());
+
     // Initialize the state of all functional APICs
     apics.iter().for_each(|&apic_id| {
-        APIC_STATES[apic_id as usize]
+        APIC_STATES.get()[apic_id as usize]
             .store(ApicState::Offline as u8, Ordering::SeqCst)
     });
 
