@@ -18,7 +18,7 @@ build_trampolines() {
     mkdir -p "bootloader/target"
     mkdir -p "kernel/target"
     nasm -f bin -o "bootloader/target/trampoline.bin" "shared/shared_data/src/trampoline.asm" || exit 1
-    nasm -f bin -o "kernel/target/apic_entry.bin" "kernel/src/acpi/apic_entry.asm" || exit
+    nasm -f bin -o "kernel/target/apic_entry.bin" "kernel/src/apic/apic_entry.asm" || exit
 }
 
 # Build the trampolines

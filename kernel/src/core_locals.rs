@@ -9,7 +9,7 @@ use spinlock::{SpinLock, InterruptState, DummyInterruptState};
 use autorefcount::{AutoRefCount, AutoRefCountGuard};
 use crate::mm::FreeList;
 use crate::interrupts::Interrupts;
-use crate::apic::Apic;
+use crate::apic::LocalApic;
 
 /// The value in `CoreLocals.apic_id` if the APIC is uninitialized
 const APIC_UNINIT: u32 = u32::MAX;
@@ -51,7 +51,7 @@ pub struct CoreLocals {
     pub shared: &'static Shared<InterruptLock>,
 
     /// An initialized APIC implementation. `None` until initialized.
-    apic: SpinLock<Option<Apic>, InterruptLock>,
+    apic: SpinLock<Option<LocalApic>, InterruptLock>,
 
     /// Local APIC id.
     apic_id: AtomicU32,
@@ -116,7 +116,7 @@ impl CoreLocals {
     }
 
     /// Get access to the local APIC
-    pub unsafe fn apic(&self) -> &SpinLock<Option<Apic>, InterruptLock> {
+    pub unsafe fn apic(&self) -> &SpinLock<Option<LocalApic>, InterruptLock> {
         &self.apic
     }
 
@@ -129,7 +129,7 @@ impl CoreLocals {
     pub unsafe fn apic_id(&self) -> Option<u32> {
         match self.apic_id.load(Ordering::SeqCst) {
             APIC_UNINIT => None,
-            x @ _       => Some(x),
+            x           => Some(x),
         }
     }
 

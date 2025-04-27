@@ -11,7 +11,7 @@ use page_table::{
 use shared_data::{
     KERNEL_PHYS_WINDOW_BASE, KERNEL_PHYS_WINDOW_SIZE, KERNEL_VMEM_BASE};
 use rangeset::RangeSet;
-use crate::acpi::apic::{ApicDomains, MemoryDomains, MAX_CORES};
+use crate::apic::{ApicDomains, MemoryDomains, MAX_CORES};
 
 /// Represents a mapping from APIC IDs to optional memory range sets for NUMA
 /// nodes.

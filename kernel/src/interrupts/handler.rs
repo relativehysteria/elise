@@ -5,7 +5,7 @@
 use core::sync::atomic::Ordering;
 use crate::interrupts::InterruptArgs;
 use crate::panic::bsp_in_panic;
-use crate::acpi::apic::{set_core_state, ApicState};
+use crate::apic::{set_core_state, ApicState};
 
 /// NMI handler
 ///

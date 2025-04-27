@@ -2,8 +2,7 @@
 
 use core::sync::atomic::{AtomicPtr, AtomicBool, Ordering};
 use core::panic::PanicInfo;
-use crate::apic::Apic;
-use crate::acpi::apic::{ApicState, core_state, MAX_CORES};
+use crate::apic::{ApicState, core_state, MAX_CORES, LocalApic};
 
 /// Tracks whether we're currently in the process of a panic on the BSP
 static BSP_IN_PANIC: AtomicBool = AtomicBool::new(false);
@@ -112,7 +111,7 @@ pub fn panic(info: &PanicInfo) -> ! {
 }
 
 /// Disable all non-BSP cores on the system
-unsafe fn disable_cores(apic: &mut Apic) {
+unsafe fn disable_cores(apic: &mut LocalApic) {
     // We don't allow disabling other cores on non-BSP cores
     assert!(core!().is_bsp(), "Attempted to disable other cores on non-BSP");
 
@@ -142,7 +141,7 @@ unsafe fn disable_cores(apic: &mut Apic) {
 
 /// Halt and INIT all processors, put everything into a predictable state, shut
 /// down the kernel and perform a software reboot
-pub unsafe fn soft_reboot(apic: &mut Apic) -> ! {
+pub unsafe fn soft_reboot(apic: &mut LocalApic) -> ! {
     // Mark the kernel as rebooting
     core!().shared.rebooting.store(true, Ordering::SeqCst);
 

@@ -3,7 +3,6 @@
 #![allow(dead_code)]
 
 use core::sync::atomic::Ordering;
-
 use page_table::{
     PageType, PAGE_NXE, PAGE_WRITE, PAGE_CACHE_DISABLE, PAGE_PRESENT};
 use crate::interrupts::InterruptId;
@@ -22,7 +21,7 @@ const IA32_APIC_BASE: u32 = 0x1B;
 const APIC_BASE: u64 = 0xFEE0_0000;
 
 /// Local APIC
-pub struct Apic {
+pub struct LocalApic {
     /// The current operating mode of the APIC
     mode: ApicMode,
 
@@ -30,7 +29,7 @@ pub struct Apic {
     orig: OrigState,
 }
 
-impl Apic {
+impl LocalApic {
     /// Get the APIC ID of the current running core
     pub fn id(&self) -> u32 {
         let apic_id = unsafe { self.read(Register::ApicId) };
@@ -470,7 +469,7 @@ pub unsafe fn init() {
     };
 
     // Initialize the APIC struct
-    let mut apic = Apic {
+    let mut apic = LocalApic {
         mode,
         orig: OrigState {
             ia32_apic_base: orig_ia32_apic_base,

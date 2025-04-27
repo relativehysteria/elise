@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::read_unaligned;
 use page_table::PhysAddr;
-use crate::acpi::{Error, apic, Madt, Srat};
-use crate::mm::phys_ptr;
+use crate::acpi::{Error, Madt, Srat};
+use crate::apic;
+use crate::mm::{phys_ptr, register_numa};
 
 /// Flag showing that a table entry is enabled
 pub const ENABLED: u32 = 1 << 0;
@@ -82,7 +83,7 @@ impl SdtHeader {
 pub struct TableEntry {
     pub typ: u8,
     pub len: u8,
-    pub ptr: *const u8,
+    ptr: *const u8,
 }
 
 impl TableEntry {
@@ -177,9 +178,14 @@ pub unsafe fn init() -> Result<(), Error> {
         }
     }
 
-    // Initialize the APIC states and NUMA topologies
+    // Inform the memory manager of our NUMA topology
+    if let Some(srat) = srat {
+        unsafe { register_numa(srat.apic_to_domain, srat.domain_to_ranges); }
+    }
+
+    // Initialize the APIC states on the system and bring up the other cores
     if let Some(madt) = madt {
-        apic::init(madt.apics, srat)?;
+        apic::init_system(madt.apics)?;
     }
 
     Ok(())

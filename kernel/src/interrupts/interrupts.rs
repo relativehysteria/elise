@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::arch::asm;
 use crate::interrupts::{handler, INT_HANDLERS, AllRegs};
-use crate::apic::Apic;
 use crate::interrupts::{Gdt, Tss, get_selector_indices};
+use crate::apic::LocalApic;
 
 /// Indicates whether the interrupt number at index into this array requires an
 /// EOI when handled
@@ -81,7 +81,6 @@ type InterruptDispatch = unsafe fn(InterruptArgs) -> bool;
 /// Structure to hold different dispatch routines for interrupts
 pub struct Interrupts {
     dispatch: [Option<InterruptDispatch>; 256],
-    //dispatch: [(InterruptId, Option<InterruptDispatch>); 256]
     pub tss: Box<Tss>,
     pub idt: Vec<IdtEntry>,
     pub gdt: Gdt,
@@ -313,7 +312,7 @@ unsafe extern "sysv64" fn interrupt_entry(
 
     // EOI the APIC if required
     if EOI_REQUIRED[idx].load(Ordering::SeqCst) {
-        unsafe { Apic::eoi() };
+        unsafe { LocalApic::eoi() };
 
         // If we're only handling EOIs, we have handled what was requested
         if draining_eois { return; }

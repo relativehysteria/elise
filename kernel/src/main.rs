@@ -14,8 +14,8 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // Initialize the interrupts
     kernel::interrupts::init();
 
-    // Initialize the APIC
-    unsafe { kernel::apic::init(); }
+    // Initialize the local APIC
+    unsafe { kernel::apic::local::init(); }
 
     // BSP routines; one time initialization for the kernel
     if kernel::core!().is_bsp() {
@@ -40,7 +40,7 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     unsafe { kernel::core!().enable_interrupts(); }
 
     // Check in that this core has booted and is ready!
-    kernel::acpi::apic::check_in();
+    kernel::apic::check_in();
 
-    loop { unsafe { cpu::halt(); } }
+    unsafe { cpu::halt(); }
 }

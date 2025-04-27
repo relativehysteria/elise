@@ -1,4 +1,4 @@
-//! Routines and structures for manipulating NUMA topologies and APIC states
+//! Routines and structures for manipulating APIC states
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU8};
 use alloc::vec::Vec;
@@ -6,7 +6,7 @@ use alloc::collections::BTreeMap;
 use page_table::PhysAddr;
 use rangeset::RangeSet;
 use shared_data::BootloaderState;
-use crate::acpi::{Error, Srat};
+use crate::acpi::Error;
 use crate::mm::slice_phys_mut;
 
 /// Maximum number of cores supported by the system.
@@ -14,12 +14,6 @@ use crate::mm::slice_phys_mut;
 /// This value can be technically arbitrarily large. However, large values will
 /// cause the global APIC/core tracking variables to grow large as well.
 pub const MAX_CORES: usize = 1024;
-
-/// Map of APIC IDs to their memory domains.
-///
-/// APIC ID is the index and the value is the domain ID.
-pub static APIC_TO_MEM_DOMAIN: [AtomicU32; MAX_CORES] =
-    [const { AtomicU32::new(0) }; MAX_CORES];
 
 /// Map of the APIC IDs to their APIC states.
 static APIC_STATES: [AtomicU8; MAX_CORES] =
@@ -122,27 +116,8 @@ impl From<u8> for ApicState {
     }
 }
 
-/// Initialize the NUMA mappings and register them with the memory manager,
-/// and also initialize and bring up the other cores on the system
-pub fn init(
-    apics: Vec<u32>,
-    srat: Option<Srat>,
-) -> Result<(), Error> {
-    // Register the APIC IDs to their memory domains and notify the memory
-    // manager about the NUMA mappings
-    if let Some(srat) = srat {
-        let ad = srat.apic_to_domain;
-        let md = srat.domain_to_ranges;
-
-        ad.iter().for_each(|(&apic, &domain)| {
-            APIC_TO_MEM_DOMAIN[apic as usize]
-                .store(domain, Ordering::Relaxed);
-        });
-
-        // Inform the memory allocator of our NUMA mappings
-        unsafe { crate::mm::register_numa(ad, md); }
-    }
-
+/// Initialize and bring up the other cores on the system
+pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
     // Initialize the state of all functional APICs
     apics.iter().for_each(|&apic_id| {
         APIC_STATES[apic_id as usize]
