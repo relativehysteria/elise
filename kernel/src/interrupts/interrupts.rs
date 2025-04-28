@@ -27,7 +27,7 @@ static DRAIN_PRECEDENCE: [AtomicBool; 256] =
 
 /// Returns the bitmask of the `EOI_REQUIRED` array.
 ///
-/// Each bit set means that the IVT at that bit index requires an EOI.
+/// Each bit set means that the IDT entry at that bit index requires an EOI.
 ///
 /// There's a race condition; if the `EOI_REQUIRED` array is updated while this
 /// function runs, it might return stale data, and as such is marked unsafe.
@@ -401,7 +401,7 @@ pub enum InterruptId {
 impl From<u8> for InterruptId {
     fn from(val: u8) -> Self {
         match val {
-            // Well defined IVTs
+            // Well defined IDT entries
             0x00 => Self::DivideBy0,
             0x02 => Self::NonMaskableInterrupt,
             0x03 => Self::Breakpoint,
@@ -421,7 +421,7 @@ impl From<u8> for InterruptId {
             0x12 => Self::MachineCheck,
             0x13 => Self::SIMDFloatingPointException,
 
-            // Kernel defined IVTs
+            // Kernel defined IDT entries
             0x20 => Self::SoftRebootTimer,
 
             // Everything else is reserved and must not be used

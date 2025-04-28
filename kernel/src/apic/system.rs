@@ -9,7 +9,6 @@ use rangeset::RangeSet;
 use shared_data::BootloaderState;
 use oncelock::OnceLock;
 
-use crate::acpi::Error;
 use crate::mm::slice_phys_mut;
 
 /// Map of the APIC IDs to their APIC states.
@@ -22,8 +21,7 @@ static TOTAL_CORES: OnceLock<u32> = OnceLock::new();
 pub static MAX_APIC_ID: OnceLock<u32> = OnceLock::new();
 
 /// The real mode code all APs start their execution at
-static ENTRY_CODE: &[u8] =
-    include_bytes!("../../target/apic_entry.bin");
+static ENTRY_CODE: &[u8] = include_bytes!("../../target/apic_entry.bin");
 
 /// The real mode address where `AP_ENTRY_CODE` will be mapped. This value is
 /// based on the first `[org n]` in the `apic_entry.asm` file
@@ -119,7 +117,7 @@ impl From<u8> for ApicState {
 }
 
 /// Initialize and bring up the other cores on the system
-pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
+pub fn init_system(apics: Vec<u32>) {
     // Allcoate the state tracking global
     let max_id = *MAX_APIC_ID.get();
     let states = (0..=max_id)
@@ -184,6 +182,4 @@ pub fn init_system(apics: Vec<u32>) -> Result<(), Error> {
             core::hint::spin_loop();
         }
     }
-
-    Ok(())
 }

@@ -74,6 +74,16 @@ impl Range {
                     core::cmp::max(self.start, other.start),
                     core::cmp::min(self.end, other.end)) })
     }
+
+    /// Returns the start of this range
+    pub fn start(&self) -> u64 {
+        self.start
+    }
+
+    /// Returns the inclusive end of this range
+    pub fn end(&self) -> u64 {
+        self.end
+    }
 }
 
 /// A set of non-overlapping inclusive `Range`s.

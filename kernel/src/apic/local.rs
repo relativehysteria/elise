@@ -39,7 +39,7 @@ pub struct LocalApic {
 impl LocalApic {
     /// Get the APIC ID of the current running core
     pub fn id(&self) -> u32 {
-        let apic_id = unsafe { self.read(Register::ApicId) };
+        let apic_id = unsafe { self.read(Register::Id) };
 
         match &self.mode {
             ApicMode::Apic(_) => apic_id >> 24,
@@ -326,12 +326,12 @@ enum ApicMode {
     X2Apic,
 }
 
-/// APIC registers (offsets into MMIO space)
 #[derive(Clone, Copy)]
-#[repr(usize)]
+#[repr(u16)]
+/// APIC registers (offsets into MMIO space)
 pub enum Register {
     /// APIC ID register
-    ApicId = 0x20,
+    Id = 0x20,
 
     /// End-of-interrupt register
     EndOfInterrupt = 0xb0,

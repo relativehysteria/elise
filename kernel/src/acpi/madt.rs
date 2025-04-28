@@ -3,22 +3,27 @@
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
-use crate::apic::ioapic::IoApic;
+// use page_table::PhysAddr;
+//
+// use crate::apic::ioapic::Uninitialized;
 use crate::acpi::{SdtHeader, Error, Table, ENABLED, parse_table_entries};
 
 /// Flag showing that an APIC is online capable
 const ONLINE_CAPABLE: u32 = 1 << 1;
+
+/// Source -> (GSI, flags)
+pub type IsaSourceOverrides = BTreeMap<u8, (u32, u16)>;
 
 /// Information returned when parsing the MADT table
 pub struct Madt {
     /// ID vector of all usable APICs
     pub apics: Vec<u32>,
 
-    /// Vector of all IO APICs
-    pub io_apics: Vec<IoApic>,
+    // /// Vector of all IO APICs that have yet to be initialized
+    // pub io_apics: Vec<Uninitialized>,
 
-    /// Vector of all ISA source overrides
-    pub isa_overrides: BTreeMap<u8, u32>,
+    // /// Vector of all ISA source overrides
+    // pub isa_overrides: IsaSourceOverrides,
 }
 
 impl Madt {
@@ -31,8 +36,8 @@ impl Madt {
         // Create the info struct that will be returned
         let mut madt = Self {
             apics: Vec::new(),
-            io_apics: Vec::new(),
-            isa_overrides: BTreeMap::new(),
+            // io_apics: Vec::new(),
+            // isa_overrides: BTreeMap::new(),
         };
 
         // The error we will return if the entry's length doesn't match the expected
@@ -55,19 +60,19 @@ impl Madt {
                         madt.apics.push(id);
                     }
                 },
-                // IO APIC
-                1 => {
-                    // Validate the length
-                    if entry.len != 12 { return mismatch_err; }
+                // // IO APIC
+                // 1 => {
+                //     // Validate the length
+                //     if entry.len != 12 { return mismatch_err; }
 
-                    // Read the fields
-                    let id   = entry.read::<u8>(2);
-                    let addr = entry.read::<u32>(4);
-                    let gsi  = entry.read::<u32>(8);
+                //     // Read the fields
+                //     let id   = entry.read::<u8>(2);
+                //     let addr = PhysAddr(entry.read::<u32>(4) as u64);
+                //     let gsi  = entry.read::<u32>(8);
 
-                    // Save the struct
-                    madt.io_apics.push(IoApic::new(id, addr, gsi));
-                },
+                //     // Save the struct
+                //     madt.io_apics.push(Uninitialized::new(id, addr, gsi));
+                // },
                 // // Interrupt Source Override
                 // 2 => {
                 //     // Validate the length
@@ -78,12 +83,12 @@ impl Madt {
                 //     let gsi    = entry.read::<u32>(4);
                 //     let flags  = entry.read::<u16>(8);
 
-                //     // TODO: Handle flags
-                //     if flags != 0 { return Err(Error::UnhandledFlags); }
+                //     println!("Source IRQ {source:?} -> {gsi:?}");
 
                 //     // Insert the override and make sure this entry is unique
-                //     if let Some(orig) = madt.isa_overrides.insert(source, gsi) {
-                //         if orig != gsi {
+                //     let orig = madt.isa_overrides.insert(source, (gsi, flags));
+                //     if let Some(orig) = orig {
+                //         if orig.0 != gsi || orig.1 != flags {
                 //             panic!("Multiple GSIs specified for ISA override.");
                 //         }
                 //     }

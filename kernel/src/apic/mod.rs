@@ -1,7 +1,7 @@
 mod system;
 pub mod local;
-pub mod ioapic;
+// pub mod ioapic;
 
 pub use system::*;
 pub use local::LocalApic;
-pub use ioapic::IoApic;
+// pub use ioapic::IoApic;

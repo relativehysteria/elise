@@ -193,7 +193,8 @@ pub unsafe fn init() -> Result<(), Error> {
 
     // Initialize the APIC states on the system and bring up the other cores
     if let Some(madt) = madt {
-        apic::init_system(madt.apics)?;
+        // apic::ioapic::init(madt.io_apics, madt.isa_overrides);
+        apic::init_system(madt.apics);
     }
 
     Ok(())
