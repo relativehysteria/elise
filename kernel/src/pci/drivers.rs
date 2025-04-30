@@ -1,11 +1,11 @@
 //! All drivers this system is capable of handling.
 //!
 //! All drivers are required to implement the `Probe` function, which can then
-//! be registered with the `register_driver!()` macro.
+//! be registered with the `register_pci_driver!()` macro.
 //!
-//! The `register_driver!()` works by embedding all registered probe functions
-//! within a link section of the kernel at compile time. These functions are
-//! then invoked at runtime when pci devices are enumerated.
+//! The `register_pci_driver!()` works by embedding all registered probe
+//! functions within a link section of the kernel at compile time. These
+//! functions are then invoked at runtime when pci devices are enumerated.
 
 use alloc::sync::Arc;
 use crate::pci;
@@ -31,8 +31,8 @@ pub trait Device: Send + Sync {
 }
 
 /// This is the macro new drivers can be registered with. Simply call
-/// `register_driver!(probe_fn)` and the driver will be registered within the
-/// kernel!
+/// `register_pci_driver!(ProbePci)` and the driver will be registered within
+/// the kernel!
 #[macro_export] macro_rules! register_pci_driver {
     ($func:ident) => {
         const _: () = {
@@ -48,8 +48,8 @@ unsafe extern "Rust" {
     static __end_pci_probes: ProbePci;
 }
 
-/// Return an array of all of the drivers registered with `register_driver!()`
-/// within the kernel
+/// Return an array of all of the drivers registered with
+/// `register_pci_driver!()` within the kernel
 pub fn get_pci_drivers() -> &'static [ProbePci] {
     unsafe {
         let start = &__start_pci_probes as *const ProbePci;

@@ -1,3 +1,5 @@
+//! Kernel wide interrupt implementation
+
 mod interrupts;
 pub mod handler;
 pub mod gdt;

@@ -1,3 +1,5 @@
+//! APIC and IO APIC implementations
+
 mod system;
 pub mod local;
 // pub mod ioapic;
