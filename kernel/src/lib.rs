@@ -19,6 +19,7 @@ pub mod apic;
 pub mod time;
 pub mod pci;
 pub mod acpi;
+pub mod net;
 
 #[lang = "eh_personality"]
 fn eh_personality() {}

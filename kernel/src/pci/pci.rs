@@ -18,7 +18,7 @@ const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
 const PCI_CONFIG_DATA: u16 = 0xCFC;
 
 /// List of devices handled by a driver
-static DEVICES: SpinLock<Vec<Arc<dyn Device>>, InterruptLock> =
+static DEVICES: SpinLock<Vec<Arc<dyn crate::pci::Device>>, InterruptLock> =
     SpinLock::new(Vec::new());
 
 #[derive(Clone, Copy, Debug)]
@@ -74,18 +74,6 @@ impl DeviceConfig {
                        self.subsystem_vendor_id,
                        self.subsystem_device_id)
     }
-}
-
-/// Trait that all PCI device drivers must implement
-pub trait Device: Send + Sync {
-    /// Disable the device and release resources (called before a soft reboot)
-    ///
-    /// When a soft reboot happens, it is ideal to reset all devices to a state
-    /// where they can be immediately re-initialized after the standard
-    /// post-boot probe process.
-    ///
-    /// This function MUST BE RE-ENTRANT AT ALL COST.
-    fn purge(&self);
 }
 
 /// Enumerate all available PCI devices on the system and initialize their

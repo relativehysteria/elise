@@ -16,7 +16,19 @@ use crate::pci;
 ///
 /// Each device driver must implement this probe function and register it with
 /// `register_pci_driver!()`
-pub type ProbePci = fn(&pci::DeviceConfig) -> Option<Arc<dyn pci::Device>>;
+pub type ProbePci = fn(&pci::DeviceConfig) -> Option<Arc<dyn Device>>;
+
+/// Trait that all PCI device drivers must implement
+pub trait Device: Send + Sync {
+    /// Disable the device and release resources (called before a soft reboot)
+    ///
+    /// When a soft reboot happens, it is ideal to reset all devices to a state
+    /// where they can be immediately re-initialized after the standard
+    /// post-boot probe process.
+    ///
+    /// This function MUST BE RE-ENTRANT AT ALL COST.
+    fn purge(&self);
+}
 
 /// This is the macro new drivers can be registered with. Simply call
 /// `register_driver!(probe_fn)` and the driver will be registered within the
@@ -26,7 +38,7 @@ pub type ProbePci = fn(&pci::DeviceConfig) -> Option<Arc<dyn pci::Device>>;
         const _: () = {
             #[used]
             #[unsafe(link_section = ".pci_probes")]
-            static DRIVER: ProbePci = $func;
+            static DRIVER: $crate::pci::ProbePci = $func;
         };
     }
 }
