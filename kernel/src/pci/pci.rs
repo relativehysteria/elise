@@ -13,10 +13,10 @@ use crate::pci::DRIVERS;
 use crate::core_locals::InterruptLock;
 
 /// I/O port for the configuration space address
-const PCI_CONFIG_ADDRESS: *const u32 = 0xCF8 as *const u32;
+const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
 
 /// I/O port for the configuration space data
-const PCI_CONFIG_DATA: *const u32 = 0xCFC as *const u32;
+const PCI_CONFIG_DATA: u16 = 0xCFC;
 
 /// List of devices handled by a driver
 static DEVICES: SpinLock<Vec<Box<dyn Device>>, InterruptLock> =

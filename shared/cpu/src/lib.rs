@@ -30,7 +30,7 @@ pub unsafe fn enable_interrupts() {
 
 #[inline]
 /// Read a byte from I/O port `addr`
-pub unsafe fn in8(addr: *const u8) -> u8 {
+pub unsafe fn in8(addr: u16) -> u8 {
     let mut byte: u8;
     unsafe { asm!("in al, dx", in("dx") addr, out("al") byte) };
     byte
@@ -38,13 +38,13 @@ pub unsafe fn in8(addr: *const u8) -> u8 {
 
 #[inline]
 /// Write a `byte` to I/O port `addr`
-pub unsafe fn out8(addr: *const u8, byte: u8) {
+pub unsafe fn out8(addr: u16, byte: u8) {
     unsafe { asm!("out dx, al", in("dx") addr, in("al") byte) };
 }
 
 #[inline]
 /// Read bytes from I/O port `addr`
-pub unsafe fn in32(addr: *const u32) -> u32 {
+pub unsafe fn in32(addr: u16) -> u32 {
     let mut bytes: u32;
     unsafe { asm!("in eax, dx", in("dx") addr, out("eax") bytes) };
     bytes
@@ -52,7 +52,7 @@ pub unsafe fn in32(addr: *const u32) -> u32 {
 
 #[inline]
 /// Write `bytes` to I/O port `addr`
-pub unsafe fn out32(addr: *const u32, bytes: u32) {
+pub unsafe fn out32(addr: u16, bytes: u32) {
     unsafe { asm!("out dx, eax", in("dx") addr, in("eax") bytes) };
 }
 

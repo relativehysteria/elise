@@ -47,17 +47,17 @@ pub unsafe fn calibrate() {
     // to check whether the output pin is set to 1, indicating the
     // countdown completed.
     unsafe {
-        cpu::out8(0x43 as *mut u8, 0x30);
-        cpu::out8(0x40 as *mut u8, 0xff);
-        cpu::out8(0x40 as *mut u8, 0xff);
+        cpu::out8(0x43, 0x30);
+        cpu::out8(0x40, 0xff);
+        cpu::out8(0x40, 0xff);
 
         loop {
             // Send the read back command to latch status on channel 0
-            cpu::out8(0x43 as *mut u8, 0xe2);
+            cpu::out8(0x43, 0xe2);
 
             // If the output pin is high, then we know the countdown is
             // done. Break from the loop.
-            if (cpu::in8(0x40 as *const u8) & 0x80) != 0 {
+            if (cpu::in8(0x40) & 0x80) != 0 {
                 break;
             }
         }

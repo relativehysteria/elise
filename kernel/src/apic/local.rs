@@ -249,8 +249,8 @@ impl LocalApic {
         cpu::wrmsr(IA32_APIC_BASE, self.orig.ia32_apic_base | apic_mode);
 
         // Reload the PIC's original state
-        cpu::out8(0xA1 as *const u8, self.orig.pic_a1);
-        cpu::out8(0x21 as *const u8, self.orig.pic_21);
+        cpu::out8(0xA1, self.orig.pic_a1);
+        cpu::out8(0x21, self.orig.pic_21);
         }
     }
 
@@ -432,12 +432,12 @@ pub unsafe fn init() {
             | if cpu_features.x2apic { IA32_APIC_BASE_EXTD } else { 0 };
 
         // Save the old PIC state
-        let orig_pic_a1 = cpu::in8(0xA1 as *const u8);
-        let orig_pic_21 = cpu::in8(0x21 as *const u8);
+        let orig_pic_a1 = cpu::in8(0xA1);
+        let orig_pic_21 = cpu::in8(0x21);
 
         // Disable the old PIC by masking off all of its interrupts
-        cpu::out8(0xA1 as *const u8, 0xFF);
-        cpu::out8(0x21 as *const u8, 0xFF);
+        cpu::out8(0xA1, 0xFF);
+        cpu::out8(0x21, 0xFF);
 
         // Reprogram the APIC with our new settings.
         cpu::wrmsr(IA32_APIC_BASE, apic_base);

@@ -24,41 +24,40 @@ impl SerialDriver {
         };
 
         // Go through each defined port
-        for (idx, &port_addr) in PORT_ADDRESSES.iter().enumerate() {
-            let port = port_addr as *mut u8;
+        for (idx, &port) in PORT_ADDRESSES.iter().enumerate() {
             unsafe {
                 // Disable all interrupts
-                cpu::out8(port.offset(1), 0x00);
+                cpu::out8(port + 1, 0x00);
 
                 // Enable DLAB (set baud divisor)
-                cpu::out8(port.offset(3), 0x80);
+                cpu::out8(port + 3, 0x80);
 
                 // Divisor = 115200 / divisor;
                 // low byte and high byte of the divisor, respectively
-                cpu::out8(port.offset(0), 0x04);
-                cpu::out8(port.offset(1), 0x00);
+                cpu::out8(port, 0x04);
+                cpu::out8(port + 1, 0x00);
 
                 // 8 bits, no parity, one stop bit
-                cpu::out8(port.offset(3), 0x03);
+                cpu::out8(port + 3, 0x03);
 
                 // IRQs disabled, RTS/DSR set
-                cpu::out8(port.offset(4), 0x03);
+                cpu::out8(port + 4, 0x03);
 
                 // Test the serial chip
 
                 // Set it to loopback mode
-                cpu::out8(port.offset(4), 0x1E);
+                cpu::out8(port + 4, 0x1E);
 
                 // Send a byte
-                cpu::out8(port.offset(0), 0xAE);
+                cpu::out8(port, 0xAE);
 
                 // Check if the byte is returned back
-                if cpu::in8(port.offset(0)) == 0xAE {
+                if cpu::in8(port) == 0xAE {
                     // It is -- set the port back to normal mode
-                    cpu::out8(port.offset(4), 0x0F);
+                    cpu::out8(port + 4, 0x0F);
 
                     // Register the port
-                    driver.ports[idx] = Some(port_addr);
+                    driver.ports[idx] = Some(port);
                 }
             }
         }
@@ -71,15 +70,13 @@ impl SerialDriver {
     /// Read a byte from whatever port has a byte available
     pub fn read_byte(&mut self) -> Option<u8> {
         // Go through each port
-        for port_addr in self.ports.iter().filter(|p| p.is_some()) {
-            let port = port_addr.unwrap() as *mut u8;
-
+        for &port in self.ports.iter().flatten() {
             unsafe {
                 // Check if there is a byte available
-                if (cpu::in8(port.offset(5)) & 1) != 0 {
+                if (cpu::in8(port + 5) & 1) != 0 {
                     // Read the byte that was present on this port and
                     // return it
-                    return Some(cpu::in8(port.offset(0)));
+                    return Some(cpu::in8(port));
                 }
             }
         }
@@ -94,17 +91,15 @@ impl SerialDriver {
         if byte == b'\n' { self.write_byte(b'\r'); }
 
         // Go through each port
-        for port_addr in self.ports.iter().filter(|p| p.is_some()) {
-            let port = port_addr.unwrap() as *mut u8;
-
+        for &port in self.ports.iter().flatten() {
             // Wait for the transmit buffer to be ready
             unsafe {
-                while (cpu::in8(port.offset(5)) & 0x20) == 0 {
+                while (cpu::in8(port + 5) & 0x20) == 0 {
                     core::hint::spin_loop();
                 }
 
                 // Write the byte
-                cpu::out8(port.offset(0), byte);
+                cpu::out8(port, byte);
             }
         }
     }
