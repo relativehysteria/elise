@@ -12,7 +12,7 @@ rustflags = [
     "-C", "code-model=kernel",
     "-C", "linker=ld.lld",
     "-C", "relocation-model=static",
-    "-C", "link-args=--no-eh-frame-hdr --image-base 0xFFFFFFFFCAFE0000",
+    "-C", "link-args=--no-eh-frame-hdr --image-base 0xFFFFFFFFCAFE0000 -T.cargo/drivers.ld",
     "-C", "panic=abort",
     "-C", "force-frame-pointers=no",
 ]

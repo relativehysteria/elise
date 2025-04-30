@@ -47,7 +47,7 @@ sudo qemu-system-x86_64 \
     -object memory-backend-ram,size=2048M,id=mem1 \
     -numa node,cpus=0-2,memdev=mem0 \
     -numa node,cpus=3-5,memdev=mem1 \
-    -device driver=e1000,netdev=net0 \
+    -device driver=e1000e,netdev=net0 \
     -device driver=e1000,netdev=net1 \
     -netdev user,id=net0,tftp="$tftp",bootfile=bootloader.efi \
     -netdev user,id=net1

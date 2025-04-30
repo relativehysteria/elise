@@ -1,8 +1,7 @@
 //! Drivers and other routines related to PCI-based devices
 
 mod pci;
+mod drivers;
 
 pub use pci::*;
-
-/// List of drivers that will be probed during PCI enumeration
-pub static DRIVERS: &[&dyn pci::Driver] = &[];
+pub use drivers::*;

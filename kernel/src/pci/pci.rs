@@ -3,13 +3,12 @@
 // PCIe might be implemented later if needed
 
 use alloc::vec::Vec;
-use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::mem::size_of;
 use core::fmt::Debug;
 
 use spinlock::SpinLock;
 
-use crate::pci::DRIVERS;
 use crate::core_locals::InterruptLock;
 
 /// I/O port for the configuration space address
@@ -19,7 +18,7 @@ const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
 const PCI_CONFIG_DATA: u16 = 0xCFC;
 
 /// List of devices handled by a driver
-static DEVICES: SpinLock<Vec<Box<dyn Device>>, InterruptLock> =
+static DEVICES: SpinLock<Vec<Arc<dyn Device>>, InterruptLock> =
     SpinLock::new(Vec::new());
 
 #[derive(Clone, Copy, Debug)]
@@ -86,23 +85,18 @@ pub trait Device: Send + Sync {
     /// post-boot probe process.
     ///
     /// This function MUST BE RE-ENTRANT AT ALL COST.
-    fn purge(&mut self);
-}
-
-/// Trait that devices can implement to be registered during the PCI probe
-/// process
-pub trait Driver: Send + Sync + Debug {
-    /// Probes the device configuration and returns an initialized device if
-    /// supported
-    fn probe(&self, cfg: &DeviceConfig) -> Option<Box<dyn Device>>;
+    fn purge(&self);
 }
 
 /// Enumerate all available PCI devices on the system and initialize their
 /// drivers if supported
 pub unsafe fn init() {
     // Chances of the devices changing between soft reboots are pretty much
-    // close to none, so we might want to save the device BDF IDs in a bitmap
-    // and instead of going over the devices again, just go through the bitmap.
+    // close to none, so we might want to save the device BDF IDs instead of
+    // looping over them again
+
+    // Get the drivers registered in the kernel
+    let drivers = crate::pci::get_pci_drivers();
 
     // For each bus ID
     (0..256).flat_map(|bus| {
@@ -135,20 +129,11 @@ pub unsafe fn init() {
             read_pci_registers::<DeviceConfig>(select_addr)
         };
 
-        // If we found at least one driver, prevent the "no driver" message from
-        // popping out during further probes
-        let mut msg_printed = false;
-
         // If we have a driver registered for this device, save the device
-        for driver in DRIVERS {
-            if let Some(device) = driver.probe(&dev_cfg) {
+        for probe in drivers {
+            if let Some(device) = probe(&dev_cfg) {
                 print!("PCI driver for dev: {} > ", dev_cfg.did_vid());
-                println!("{driver:?} | INITIALIZING DEVICE");
                 DEVICES.lock().push(device);
-                msg_printed = true;
-            } else if !msg_printed {
-                println!("No driver for dev: {}", dev_cfg.did_vid());
-                msg_printed = true;
             }
         }
     });
@@ -158,8 +143,8 @@ pub unsafe fn init() {
 /// `init()` before use
 pub unsafe fn reset_devices() {
     unsafe { &mut *DEVICES.shatter() }
-        .iter_mut()
-        .for_each(|dev| dev.purge())
+        .into_iter()
+        .for_each(|dev| dev.purge());
 }
 
 /// Read a struct `T` given the PCI `select_addr`
