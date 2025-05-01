@@ -118,6 +118,9 @@ unsafe fn disable_cores(apic: &mut LocalApic) {
 
     // Send out NMIs to all non-BSP cores and wait for them to halt
     if let Some(bsp_id) = unsafe { core!().apic_id() } {
+        // Only shut down the other APICs if they were initialized
+        if !MAX_APIC_ID.initialized() { return; }
+
         for id in 0..*MAX_APIC_ID.get() {
             // Don't NMI the BSP
             if id == bsp_id { continue; }
