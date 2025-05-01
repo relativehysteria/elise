@@ -86,7 +86,7 @@ impl IoApic {
     /// Creates and initializes new IO APIC, mapping it into memory.
     fn new_init(id: u8, addr: PhysAddr, gsi_base: u32) -> Self {
         // Get a virtual address for this IO APIC
-        let vaddr = crate::mm::receive_vaddr_4k(4096);
+        let vaddr = crate::mm::receive_vaddr_4k(PageType::Page4K as u64);
 
         // Get access to the current page table
         let mut pmem = crate::mm::PhysicalMemory;

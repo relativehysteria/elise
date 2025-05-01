@@ -449,7 +449,7 @@ pub unsafe fn init() {
     // If we're in normal xAPIC mode, map in the APIC physical memory
     let mode = if !cpu_features.x2apic {
         // Receive a virtual address for our mapping
-        let vaddr = crate::mm::receive_vaddr_4k(4096);
+        let vaddr = crate::mm::receive_vaddr_4k(PageType::Page4K as u64);
 
         // Get access to the current page table
         let mut pmem = crate::mm::PhysicalMemory;

@@ -139,7 +139,8 @@ impl PhysMem for PhysicalMemory {
     fn alloc_phys(&mut self, layout: Layout) -> Option<PhysAddr> {
         // If someone wants to allocate a 4-KiB page from physical memory,
         // use our free lists
-        if layout.size() == 4096 && layout.align() == 4096 {
+        let page_size = PageType::Page4K as usize;
+        if layout.size() == page_size && layout.align() == page_size {
             unsafe {
                 let ptr = core!().free_list(layout).lock().pop();
                 Some(PhysAddr(ptr as u64 - KERNEL_PHYS_WINDOW_BASE))
@@ -214,8 +215,9 @@ impl FreeList {
     ///
     /// Panics if the blocks backed by this freelist don't fit into a page.
     fn allocate_page_for_blocks(&mut self) {
+        let page_size = PageType::Page4K as u64;
         // Make sure we're not allocating for a block that can't be backed by it
-        assert!(self.size <= 4096,
+        assert!(self.size <= page_size as usize,
             "Can't allocate page for a freelist whose blocks don't fit in");
 
         // Allocate the page from physical memory
@@ -223,13 +225,13 @@ impl FreeList {
             let mut phys_mem = core!().shared.free_memory().lock();
             let phys_mem = phys_mem.as_mut().unwrap();
 
-            phys_mem.allocate_prefer(4096, 4096, mem_range())
+            phys_mem.allocate_prefer(page_size, page_size, mem_range())
                 .ok().flatten()
                 .expect("Failed to allocate physical memory") as u64
         };
         // Split up this allocation into blocks backed by this freelist
         // and make them available
-        for offset in (0..4096).step_by(self.size) {
+        for offset in (0..page_size).step_by(self.size) {
             let vaddr = slice_phys_mut(
                 PhysAddr(allocation + offset), self.size as u64).as_mut_ptr();
             unsafe { self.push(vaddr); }
@@ -264,7 +266,7 @@ impl FreeList {
         if self.head.0 == 0 {
             // If the blocks backed by this freelist are smaller than a page,
             // just point the blocks to our physical memory window.
-            if self.size <= 4096 {
+            if self.size <= PageType::Page4K as usize {
                 self.allocate_page_for_blocks();
             // Blocks backed by this freelist don't fit into a page. Just
             // allocate new virtual memory for the block and return the pointer
