@@ -33,6 +33,18 @@ pub const PAGE_NXE: u64 = 1 << 63;
 /// Strongly typed physical address.
 pub struct PhysAddr(pub u64);
 
+impl PhysAddr {
+    /// Returns whether the physical address is aligned to `page_type`
+    pub fn is_aligned_to_page(&self, page_type: PageType) -> bool {
+        self.is_aligned(page_type as u64)
+    }
+
+    /// Returns whether the physical address is aligned to `val`
+    pub fn is_aligned(&self, val: u64) -> bool {
+        (self.0 & (!(val - 1))) == self.0
+    }
+}
+
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A strongly typed virtual address.
@@ -40,8 +52,13 @@ pub struct VirtAddr(pub u64);
 
 impl VirtAddr {
     /// Returns whether the virtual address is aligned to `page_type`
-    pub fn is_aligned(&self, page_type: PageType) -> bool {
-        (self.0 & (!(page_type as u64 - 1))) == self.0
+    pub fn is_aligned_to_page(&self, page_type: PageType) -> bool {
+        self.is_aligned(page_type as u64)
+    }
+
+    /// Returns whether the virtual address is aligned to `val`
+    pub fn is_aligned(&self, val: u64) -> bool {
+        (self.0 & (!(val - 1))) == self.0
     }
 }
 
@@ -185,7 +202,7 @@ impl MapRequest {
     /// Returns `None` if the `vaddr` is not aligned to the `page_type`
     pub fn new(vaddr: VirtAddr, page_type: PageType, size: u64,
                permissions: Permissions) -> Result<Self, Error> {
-        vaddr.is_aligned(page_type).then_some(
+        vaddr.is_aligned_to_page(page_type).then_some(
             Self {
                 page_type,
                 vaddr,
