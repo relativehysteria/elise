@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::alloc::{GlobalAlloc, Layout};
+use core::marker::PhantomData;
 
 use oncelock::OnceLock;
 use page_table::{
@@ -369,6 +370,87 @@ impl FreeList {
     }
 }
 
+/// Physically contiguous page-aligned allocation
+pub struct ContigPageAligned<T> {
+    /// Virtual address of the allocation
+    vaddr: VirtAddr,
+
+    /// Physical address of the allocation
+    paddr: PhysAddr,
+
+    /// Allocation size in bytes
+    size: usize,
+
+    /// Mark that this "holds" a `T`
+    _phantom: PhantomData<T>,
+}
+
+impl<T> ContigPageAligned<T> {
+    /// Create a new physically contiguous page-aligned allocation
+    pub fn new(val: T) -> Self {
+        let page_size = PageType::Page4K as usize;
+        let size = size_of::<T>();
+        assert!(size > 0, "Cannot use ZST for PhysContig");
+
+        // Round up to the nearest multiple of 4096
+        let pages = (size + page_size - 1) / page_size;
+        let alloc_size = pages * page_size;
+
+        unsafe {
+            // Make the allocation
+            let alloc = GLOBAL_ALLOCATOR.alloc(
+                Layout::from_size_align(alloc_size, page_size).unwrap());
+
+            assert!(!alloc.is_null(), "PhysContig allocation failed");
+
+            // Compute the physical address
+            let paddr = PhysAddr(alloc as u64 - KERNEL_PHYS_WINDOW_BASE);
+
+            // Initialize the memory
+            core::ptr::write(alloc as *mut T, val);
+
+            Self {
+                vaddr: VirtAddr(alloc as u64),
+                paddr,
+                size: alloc_size,
+                _phantom: PhantomData,
+            }
+        }
+    }
+
+    /// Get the physical address of this allocation
+    pub fn phys_addr(&self) -> PhysAddr {
+        self.paddr
+    }
+}
+
+impl<T> Drop for ContigPageAligned<T> {
+    fn drop(&mut self) {
+        unsafe {
+            GLOBAL_ALLOCATOR.dealloc(self.vaddr.0 as *mut u8,
+                Layout::from_size_align(self.size, 4096).unwrap());
+        }
+    }
+}
+
+impl<T> core::ops::Deref for ContigPageAligned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            &*(self.vaddr.0 as *const T)
+        }
+    }
+}
+
+impl<T> core::ops::DerefMut for ContigPageAligned<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            &mut *(self.vaddr.0 as *mut T)
+        }
+    }
+}
+
 #[alloc_error_handler]
 /// Handler for allocation errors, likely OOMs;
 /// simply panic, notifying that we can't satisfy the allocation
@@ -376,7 +458,6 @@ fn alloc_error(_layout: Layout) -> ! {
     panic!("Allocation error!");
 }
 
-// TODO: document when NUMA and per-core free lists are implemented
 #[global_allocator]
 /// Global allocator for the kernel
 pub static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator;

@@ -76,10 +76,61 @@ impl DeviceConfig {
     }
 }
 
+#[derive(Debug, PartialEq)]
+#[allow(missing_docs)]
+/// The bitness of a BAR
+pub enum BarBits {
+    Bit32,
+    Bit64,
+}
+
+impl BarBits {
+    /// Return the bitness of `bar`
+    pub fn from_bar(bar: u32) -> Self {
+        match (bar >> 1) & 0b11 {
+            0b10 => Self::Bit64,
+            _    => Self::Bit32,
+        }
+    }
+
+    /// Based on the bitness of `bar0`, returns a whole `u64` value from
+    /// either `bar0` (if 32-bit), or in `bar0 << 32 | bar1` (if 64-bit)
+    /// with the BAR type bits masked off from both
+    pub fn u64(bar0: u32, bar1: u32) -> u64 {
+        // Mask off the bits from both
+        let lower  = (bar0 & !0b1111) as u64;
+        let higher = (bar1 & !0b1111) as u64;
+
+        // Return the u64 based on bitness
+        match Self::from_bar(bar0) {
+            Self::Bit32 => lower,
+            Self::Bit64 => (higher << 32) | lower,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+#[allow(missing_docs)]
+/// The memory type of a BAR
+pub enum BarType {
+    IO,
+    Memory,
+}
+
+impl BarType {
+    /// Return the type of `bar`
+    pub fn from_bar(bar: u32) -> Self {
+        match bar & 0b1 {
+            0 => Self::Memory,
+            _ => Self::IO,
+        }
+    }
+}
+
 /// Enumerate all available PCI devices on the system and initialize their
 /// drivers if supported
 pub unsafe fn init() {
-    // Chances of the devices changing between soft reboots are pretty much
+    // Chances of the devices changing between sof reboots are pretty much
     // close to none, so we might want to save the device BDF IDs instead of
     // looping over them again
 
@@ -120,7 +171,7 @@ pub unsafe fn init() {
         // If we have a driver registered for this device, save the device
         for probe in drivers {
             if let Some(device) = probe(&dev_cfg) {
-                print!("PCI driver for dev: {} > ", dev_cfg.did_vid());
+                println!("Got PCI driver for device: {} ", dev_cfg.did_vid());
                 DEVICES.lock().push(device);
             }
         }
