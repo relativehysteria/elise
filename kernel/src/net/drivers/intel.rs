@@ -12,7 +12,7 @@ use page_table::{
 
 use crate::pci::{DeviceConfig, Device, BarBits, BarType};
 use crate::mm;
-use crate::net::{NetDriver, Mac};
+use crate::net::{NetDriver, Mac, Packet, PacketLease};
 use crate::core_locals::InterruptLock;
 
 /// The Intel NICs map in 128KiB of memory
@@ -42,6 +42,9 @@ struct NicRegisters {
     /// Interrupt mask clear
     imc: usize,
 
+    /// Receive Control
+    rctl: usize,
+
     /// Receive address low
     ral: usize,
 
@@ -62,6 +65,9 @@ struct NicRegisters {
 
     /// Receive descriptor tail
     rdt: usize,
+
+    /// Transmit control
+    tctl: usize,
 
     /// Transmit descriptor base low
     tdbal: usize,
@@ -86,6 +92,7 @@ impl Default for NicRegisters {
         Self {
             ctrl:  0x0000,
             imc:   0x00D8,
+            rctl:  0x0100,
             ral:   0x5400,
             rah:   0x5404,
             rdbal: 0x2800,
@@ -93,6 +100,7 @@ impl Default for NicRegisters {
             rdlen: 0x2808,
             rdh:   0x2810,
             rdt:   0x2818,
+            tctl:  0x0400,
             tdbal: 0x3800,
             tdbah: 0x3804,
             tdlen: 0x3808,
@@ -107,7 +115,7 @@ impl Default for NicRegisters {
 #[repr(C)]
 /// Intel NIC receive descriptor
 struct RxDescriptor {
-    addr:     u64,
+    addr:     PhysAddr,
     len:      u16,
     checksum: u16,
     status:   u8,
@@ -120,7 +128,7 @@ struct RxDescriptor {
 #[repr(C)]
 /// Intel NIC legacy transmit descriptor
 struct LegacyTxDescriptor {
-    addr:    u64,
+    addr:    PhysAddr,
     len:     u16,
     cso:     u8,
     cmd:     u8,
@@ -128,27 +136,6 @@ struct LegacyTxDescriptor {
     rsv:     u8,
     css:     u8,
     special: u16,
-}
-
-/// Allocated packet that can be put into and taken from DMA buffers.
-///
-/// The inner backing buffer is guaranteed to be page-aligned.
-struct Packet {
-    /// The raw backing memory for the packet
-    raw: mm::ContigPageAligned<[u8; 4096]>,
-
-    /// Size of the inner backing memory
-    length: usize,
-}
-
-impl Packet {
-    /// Allocate a new packet buffer
-    fn new() -> Self {
-        Self {
-            raw: mm::ContigPageAligned::new([0u8; 4096]),
-            length: 0,
-        }
-    }
 }
 
 /// Transmit state of a NIC
@@ -195,6 +182,9 @@ struct IntelNic {
 
     /// The transmit state of the NIC
     tx_state: SpinLock<TxState, InterruptLock>,
+
+    /// A free list of packets, used to avoid packet relocation
+    packets: SpinLock<Vec<Packet>, InterruptLock>,
 }
 
 impl IntelNic {
@@ -260,7 +250,7 @@ impl IntelNic {
             let rx_buf = Packet::new();
 
             // Store the address of the packet buffer in the descriptor table
-            rx_descs[i].addr = rx_buf.raw.phys_addr().0;
+            rx_descs[i].addr = rx_buf.phys_addr();
 
             // Save a ref to the packet buffer
             rx_bufs.push(rx_buf);
@@ -285,7 +275,8 @@ impl IntelNic {
                 packets: (0..TX_DESCS_N).map(|_| None).collect(),
                 head:    0,
                 tail:    0,
-            })
+            }),
+            packets: SpinLock::new(Vec::new()),
         };
 
         // Reset the NIC and initialize it for receive and transmit
@@ -316,6 +307,11 @@ impl IntelNic {
             // Set the head and tail
             self.write(self.regs.rdh, 0);
             self.write(self.regs.rdt, rx_state.descs.len() as u32 - 1);
+
+            // Enable receive, accept broadcast packets and set the receive
+            // buffer size to 4 KiB
+            let bits = (1 << 1) | (1 << 15) | (3 << 16) | (1 << 25);
+            self.write(self.regs.rctl, bits);
         }
     }
 
@@ -324,7 +320,7 @@ impl IntelNic {
         let tx_state = self.tx_state.lock();
         unsafe {
             // Set the descriptor base
-            self.write_high_low(self.regs.rdbah, self.regs.rdbal,
+            self.write_high_low(self.regs.tdbah, self.regs.tdbal,
                 tx_state.descs.phys_addr().0);
 
             // Set the size of the descriptor queue
@@ -334,6 +330,9 @@ impl IntelNic {
             // Set the head and tail
             self.write(self.regs.tdh, 0);
             self.write(self.regs.tdt, 0);
+
+            // Enable transmit
+            self.write(self.regs.tctl, 1 << 1);
         }
     }
 
@@ -359,6 +358,7 @@ impl IntelNic {
         unsafe { self.write(self.regs.imc, !0) }
     }
 
+    #[allow(unused)]
     /// Return a `u64`, reading `rew_high` as the high 32 bits and `reg_low` as
     /// the low 32 bits
     unsafe fn read_high_low(&self, reg_high: usize, reg_low: usize) -> u64 {
@@ -412,6 +412,124 @@ impl NetDriver for IntelNic {
 
     fn mac(&self) -> Mac {
         self.mac.clone()
+    }
+
+    fn recv<'a: 'b, 'b>(&'a self) -> Option<PacketLease<'b>> {
+        // Get unique access to the RX
+        let mut rx_state = self.rx_state.lock();
+        let head = rx_state.head;
+        let desc = &rx_state.descs[head];
+
+        unsafe {
+            // Check if there's packet on the line and bail out if not
+            if (core::ptr::read_volatile(&desc.status) & 1) == 0 {
+                return None;
+            }
+
+            // Make sure there's no errors
+            assert!(core::ptr::read_volatile(&desc.errors) == 0,
+                "RX descriptor error detected");
+
+            // Get the length of the packet
+            let len = core::ptr::read_volatile(&desc.len) as usize;
+
+            // Allocate a new packet for this descriptor
+            let mut new_packet = self.allocate_packet();
+            let phys_addr = new_packet.phys_addr();
+
+            // Swap in the new packet with the old one
+            core::mem::swap(&mut new_packet, &mut rx_state.packets[head]);
+
+            // Put this descriptor back for use by the NIC
+            core::ptr::write_volatile(
+                &mut rx_state.descs[head],
+                RxDescriptor { addr: phys_addr, ..Default::default() });
+
+            // Set the tail, letting the NIC know this buffer is available again
+            self.write(self.regs.rdt, head as u32);
+
+            // Increment the head
+            rx_state.head = (head + 1) % rx_state.descs.len();
+
+            // Set the length of the packet and return a lease to it
+            new_packet.set_len(len);
+            Some(PacketLease::new(self, new_packet))
+        }
+    }
+
+    fn send(&self, mut packet: Packet, flush: bool) {
+        /// The minimum packet size as specified by the IEEE spec
+        const PACKET_MIN_SIZE: usize = 64;
+
+        // Get unique access to the TX
+        let mut tx_state = self.tx_state.lock();
+
+        // Pad packet if smaller than minimum size
+        if packet.len() < PACKET_MIN_SIZE {
+            let len = packet.len();
+            packet.raw_mut()[len..PACKET_MIN_SIZE].fill(0);
+            packet.set_len(PACKET_MIN_SIZE);
+        }
+
+        // Wait until there's space in the TX ring
+        while tx_state.tail - tx_state.head >= tx_state.descs.len() - 1 {
+            // No room in the queue, update the head for each packet which was
+            // sent by the NIC previously
+            for end in (tx_state.head..tx_state.tail).rev() {
+                // Get the status for the queued packet at the head. If the
+                // packet has been sent, there's now room for a packet
+                let idx = end % tx_state.descs.len();
+                let status = unsafe {
+                    core::ptr::read_volatile(&tx_state.descs[idx].status)
+                };
+                if (status & 1) != 0 {
+                    tx_state.head = end + 1;
+                    break;
+                }
+            }
+        }
+
+        // Fill in the TX descriptor
+        let idx = tx_state.tail & tx_state.descs.len();
+        tx_state.descs[idx] = LegacyTxDescriptor {
+            // Report status, insert FCS, end of packet
+            cmd: (1 << 3) | (1 << 1) | (1 << 0),
+            addr: packet.phys_addr(),
+            len: packet.len() as u16,
+            ..Default::default()
+        };
+
+        // Swap the new packet into the buffer list
+        let mut old_packet = Some(packet);
+        core::mem::swap(&mut old_packet, &mut tx_state.packets[idx]);
+
+        // If we replaced an existing packet, free it
+        if let Some(old) = old_packet {
+            self.release_packet(old);
+        }
+
+        // Increment the tail
+        tx_state.tail = tx_state.tail.wrapping_add(1);
+
+        // Flush if we should
+        if flush || (tx_state.tail-tx_state.head) == (tx_state.descs.len()-1) {
+            unsafe {
+                self.write(
+                    self.regs.tdt,
+                    (tx_state.tail % tx_state.descs.len()) as u32);
+            }
+        }
+    }
+
+    fn allocate_packet(&self) -> Packet {
+        self.packets.lock().pop().unwrap_or_else(|| Packet::new())
+    }
+
+    fn release_packet(&self, packet: Packet) {
+        let mut packets = self.packets.lock();
+        if packets.len() < packets.capacity() {
+            packets.push(packet)
+        }
     }
 }
 
