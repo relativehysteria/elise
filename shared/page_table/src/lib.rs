@@ -29,7 +29,7 @@ pub const PAGE_NXE: u64 = 1 << 63;
 
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 /// Strongly typed physical address.
 pub struct PhysAddr(pub u64);
 
@@ -46,7 +46,7 @@ impl PhysAddr {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 /// A strongly typed virtual address.
 pub struct VirtAddr(pub u64);
 
