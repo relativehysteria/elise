@@ -92,9 +92,7 @@ impl NetDevice {
         });
 
         // Register it
-        let mut devs = PROBED_DEVICES.lock();
-        let devs = devs.as_mut().unwrap();
-        devs.push(nd);
+        PROBED_DEVICES.lock().as_mut().unwrap().push(nd);
     }
 
     /// Lock in all of the registered net devices on the system, marking them
