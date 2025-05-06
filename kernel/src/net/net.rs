@@ -348,6 +348,27 @@ impl Packet {
             .map_err(|_| ParseError::InvalidIpHeader)
     }
 
+    /// Compute a ones-complement checksum over the provided byte slice.
+    fn checksum(bytes: &[u8]) -> u16 {
+        let mut sum: u32 = 0;
+
+        // Process all 2-byte chunks
+        for chunk in bytes.chunks_exact(2) {
+            let word = u16::from_ne_bytes([chunk[0], chunk[1]]);
+            sum = sum.wrapping_add(word as u32);
+        }
+
+        // Handle final byte (low byte) if length is odd
+        if let Some(&last_byte) = bytes.chunks_exact(2).remainder().first() {
+            sum = sum.wrapping_add(last_byte as u32);
+        }
+
+        // Fold carries
+        let sum = (sum & 0xFFFF).wrapping_add(sum >> 16);
+        let sum = (sum & 0xFFFF).wrapping_add(sum >> 16);
+        sum as u16
+    }
+
     /// Get the physical address of the packet
     pub fn phys_addr(&self) -> page_table::PhysAddr {
         self.raw.phys_addr()
