@@ -107,6 +107,24 @@ impl NetDevice {
     pub fn id(&self) -> usize {
         self.id
     }
+
+    /// Receive a raw packet from the network
+    pub fn recv(&self) -> Option<PacketLease> {
+        self.driver.recv()
+    }
+
+    /// Send a raw packet over the network
+    ///
+    /// The `packet` must not include the FCS as that will be computed by the
+    /// driver.
+    pub fn send(&self, packet: Packet, flush: bool) {
+        self.driver.send(packet, flush);
+    }
+
+    /// Allocate a new packet for use
+    pub fn allocate_packet(&self) -> Packet {
+        self.driver.allocate_packet()
+    }
 }
 
 /// The driver trait that allows access to NIC RX and TX
