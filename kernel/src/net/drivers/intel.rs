@@ -19,8 +19,7 @@ use crate::core_locals::InterruptLock;
 const MMIO_SIZE: usize = 128 * 1024;
 
 // Make sure the descriptor tables fit on a single page. Each descriptor is
-// 16-bytes in size, so there should be at most 4096 / 16 descriptors, which is
-// 256, or u8::MAX.
+// 16-bytes in size, so there should be at most 4096 / 16 = 256 descs.
 // They must also be 128-byte aligned, so that's 128 / 16 = 8 descs.
 
 /// Number of receive descriptors to allocate for a NIC
