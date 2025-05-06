@@ -176,6 +176,16 @@ pub unsafe fn init() {
             }
         }
     });
+
+    // This is a post-probe hook. If things get more complicated, it might be
+    // better to actually create a hook-register, but this works for now
+    finish_probes();
+}
+
+/// Post-probe hook. Will run after all the PCI devices are probed
+fn finish_probes() {
+    // Lock in net devices
+    crate::net::NetDevice::lock_in();
 }
 
 /// Reset all devices on the system such that they must be reinitialized through

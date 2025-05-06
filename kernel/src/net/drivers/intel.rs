@@ -12,7 +12,7 @@ use page_table::{
 
 use crate::pci::{DeviceConfig, Device, BarBits, BarType};
 use crate::mm;
-use crate::net::{NetDriver, Mac, Packet, PacketLease};
+use crate::net::{NetDriver, NetDevice, Mac, Packet, PacketLease};
 use crate::core_locals::InterruptLock;
 
 /// The Intel NICs map in 128KiB of memory
@@ -541,9 +541,19 @@ impl Device for IntelNic {
 // Register the probe function for this driver
 crate::register_pci_driver!(probe);
 fn probe(cfg: &DeviceConfig) -> Option<Arc<dyn Device>> {
+    // The PCI IDs this driver can handle
     let (vid, did) = (0x8086, 0x100E);
+
+    // If this device matches our IDs, register it
     if (vid, did) == (cfg.header.vendor_id, cfg.header.device_id) {
-        return Some(Arc::new(IntelNic::new(*cfg)));
+        // Create the driver
+        let driver = Arc::new(IntelNic::new(*cfg));
+
+        // Register it as a net device
+        NetDevice::register(driver.clone());
+
+        // Return it as a PCI device
+        return Some(driver);
     }
 
     None
