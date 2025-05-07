@@ -40,8 +40,8 @@ pub trait InterruptState {
     fn exit_lock();
 }
 
-#[repr(C)]
 /// A spinlock-guarded inner-mutable variable
+#[repr(C)]
 pub struct SpinLock<T: ?Sized, I: InterruptState> {
     /// Ticket counter. A ticket is grabbed and when `release` is set to this
     /// ticket, you get your variable
@@ -93,8 +93,8 @@ impl<T, I: InterruptState> SpinLock<T, I> {
 }
 
 impl<T: ?Sized, I: InterruptState> SpinLock<T, I> {
-    #[track_caller]
     /// Acquire exclusive access to the variable guarded by this spinlock
+    #[track_caller]
     pub fn lock(&self) -> SpinLockGuard<T, I> {
         // Make sure we don't use a non-preemptable lock during an interrupt.
         assert!(self.disable_interrupts || !I::in_interrupt(),

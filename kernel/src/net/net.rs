@@ -23,9 +23,9 @@ static PROBED_DEVICES: SpinLock<Option<Vec<Arc<NetDevice>>>, InterruptLock> =
 /// All networking capable devices on the system
 static NET_DEVICES: OnceLock<Box<[Arc<NetDevice>]>> = OnceLock::new();
 
+/// The MAC address of a NIC
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
-/// The MAC address of a NIC
 pub struct Mac(pub [u8; 6]);
 
 /// A networking capable device
@@ -224,8 +224,8 @@ pub enum ParseError {
     InvalidLength,
 }
 
-#[derive(Debug)]
 /// A parsed Ethernet header and payload
+#[derive(Debug)]
 pub struct Ethernet<'a> {
     /// Destination MAC address
     pub dst_mac: Mac,

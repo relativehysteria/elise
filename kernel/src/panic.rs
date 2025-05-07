@@ -14,8 +14,8 @@ static BSP_IN_PANIC: AtomicBool = AtomicBool::new(false);
 static PANIC_PENDING: AtomicPtr<PanicInfo> =
     AtomicPtr::new(core::ptr::null_mut());
 
-#[inline]
 /// Returns whether we're currently in the process of a panic on the BSP
+#[inline]
 pub fn bsp_in_panic() -> bool {
     BSP_IN_PANIC.load(Ordering::SeqCst)
 }
@@ -24,8 +24,8 @@ pub fn bsp_in_panic() -> bool {
 const NMI: u32 = (1 << 14) | (4 << 8);
 // TODO: encode the ICRs somehow. I don't like this^ nor 0x4500 for INIT
 
-#[panic_handler]
 /// This is the panic routine used by rust within our kernel
+#[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
     // Disable interrupts, we're not gonna recover
     unsafe { core!().disable_interrupts(); }

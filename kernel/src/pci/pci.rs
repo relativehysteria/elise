@@ -21,10 +21,10 @@ const PCI_CONFIG_DATA: u16 = 0xCFC;
 static DEVICES: SpinLock<Vec<Arc<dyn crate::pci::Device>>, InterruptLock> =
     SpinLock::new(Vec::new());
 
+/// PCI header common for any other PCI header
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 #[allow(missing_docs)]
-/// PCI header common for any other PCI header
 pub struct Header {
     pub vendor_id:       u16,
     pub device_id:       u16,
@@ -40,10 +40,10 @@ pub struct Header {
     pub bist:            u8,
 }
 
+/// Configuration of a PCI device
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 #[allow(missing_docs)]
-/// Configuration of a PCI device
 pub struct DeviceConfig {
     pub header:                Header,
     pub bar0:                  u32,
@@ -76,9 +76,9 @@ impl DeviceConfig {
     }
 }
 
+/// The bitness of a BAR
 #[derive(Debug, PartialEq)]
 #[allow(missing_docs)]
-/// The bitness of a BAR
 pub enum BarBits {
     Bit32,
     Bit64,
@@ -109,9 +109,9 @@ impl BarBits {
     }
 }
 
+/// The memory type of a BAR
 #[derive(Debug, PartialEq)]
 #[allow(missing_docs)]
-/// The memory type of a BAR
 pub enum BarType {
     IO,
     Memory,

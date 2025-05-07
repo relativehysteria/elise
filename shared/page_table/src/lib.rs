@@ -28,9 +28,9 @@ pub const PAGE_SIZE: u64 = 1 << 7;
 pub const PAGE_NXE: u64 = 1 << 63;
 
 
+/// Strongly typed physical address.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-/// Strongly typed physical address.
 pub struct PhysAddr(pub u64);
 
 impl PhysAddr {
@@ -45,9 +45,9 @@ impl PhysAddr {
     }
 }
 
+/// A strongly typed virtual address.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-/// A strongly typed virtual address.
 pub struct VirtAddr(pub u64);
 
 impl VirtAddr {
@@ -99,8 +99,8 @@ pub trait PhysMem {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Mapping errors
+#[derive(Debug, Clone)]
 pub enum Error {
     /// An invalid page was attempted to be mapped in
     InvalidPage,
@@ -118,13 +118,13 @@ pub enum Error {
     AddressUnaligned,
 }
 
-#[derive(Debug, Clone)]
 /// Paging memory access permissions.
 ///
 /// This struct defines the access rights for a memory page.
 ///
 /// Note: The `read` permission is not included because all present pages are
 /// implicitly readable.
+#[derive(Debug, Clone)]
 pub struct Permissions {
     /// Allows write access to the memory page
     pub write: bool,
@@ -164,9 +164,9 @@ impl Permissions {
     }
 }
 
+/// Different page sizes for 4-level x86_64 paging
 #[repr(u64)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Different page sizes for 4-level x86_64 paging
 pub enum PageType {
     Page4K = 4096,
     Page2M = 2 * 1024 * 1024,
@@ -180,8 +180,8 @@ impl PageType {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Request for a new page table mapping
+#[derive(Debug, Clone)]
 pub struct MapRequest {
     /// The Page type of the new entry to be mapped
     pub page_type: PageType,
@@ -213,8 +213,8 @@ impl MapRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
 /// The paging components of a page table mapping.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Mapping {
     /// Physical address of the Page Map Level 4 entry
     pub pml4e: Option<PhysAddr>,
@@ -271,9 +271,9 @@ impl Mapping {
     }
 }
 
+/// A 64-bit x86 page table
 #[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
-/// A 64-bit x86 page table
 pub struct PageTable {
     /// The physical address of the top-level page table. This is typically the
     /// value in `cr3`

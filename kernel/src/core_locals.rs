@@ -36,9 +36,9 @@ impl InterruptState for InterruptLock {
     fn exit_lock()            { unsafe { core!().enable_interrupts(); } }
 }
 
+/// Core local data
 #[allow(dead_code)]
 #[repr(C)]
-/// Core local data
 pub struct CoreLocals {
     /// The address of this structure
     ///
@@ -162,23 +162,23 @@ impl CoreLocals {
         self.exception_depth.count() != 0
     }
 
-    #[track_caller]
     /// Disable interrupts in a nesting manner.
     ///
     /// The "nesting manner" here means that if multiple `disable_interrupts()`
     /// are called, that many `enable_interrupts()` must be called before the
     /// interrupts are enabled again.
+    #[track_caller]
     pub unsafe fn disable_interrupts(&self) {
         let x = self.interrupt_disable_requests.fetch_add(1, Ordering::SeqCst);
         x.checked_add(1).expect("Overflow on disable interrupts outstanding");
         unsafe { cpu::disable_interrupts(); }
     }
 
-    #[track_caller]
     /// Enable interrupts in a nesting manner.
     ///
     /// As many `enable_interrupts()` must be called as there have been
     /// `disable_interrupts()` called.
+    #[track_caller]
     pub unsafe fn enable_interrupts(&self) {
         let x = self.interrupt_disable_requests.fetch_sub(1, Ordering::SeqCst);
         x.checked_sub(1).expect("Overflow on enable interrupts outstanding");
@@ -195,8 +195,8 @@ impl CoreLocals {
     }
 }
 
-#[inline]
 /// Returns a reference to the data local to this core
+#[inline]
 pub fn get_core_locals() -> &'static CoreLocals {
     // Get the first `u64` from `CoreLocals`, which should be the address
     unsafe {

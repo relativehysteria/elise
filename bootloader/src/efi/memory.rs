@@ -1,6 +1,7 @@
 use crate::efi::{Status, SystemTablePtr, BootloaderImagePtr};
 use rangeset::{RangeSet, Range};
 
+/// Errors returned by memory routines
 #[derive(Debug)]
 pub enum Error {
     /// Memory map expected a larger array
@@ -13,9 +14,9 @@ pub enum Error {
     MemoryMapOverflow,
 }
 
+/// Memory descriptors returned by the `get_memory_map()` boot service
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(16))]
-/// Memory descriptors returned by the `get_memory_map()` boot service
 pub struct MemoryDescriptor {
     /// Type of the memory region
     pub mem_type: MemoryType,
@@ -51,9 +52,9 @@ impl MemoryDescriptor {
     }
 }
 
+/// Type of memory region
 #[derive(Debug, Copy, Clone)]
 #[repr(u32)]
-/// Type of memory region
 pub enum MemoryType {
     /// Not usable
     Reserved = 0,

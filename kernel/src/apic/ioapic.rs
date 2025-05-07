@@ -24,9 +24,9 @@ static GSI_TO_IOAPIC: OnceLock<&[usize]> = OnceLock::new();
 /// Current mapping of GSIs to their respective IDT, offset by 0x20.
 static GSI_TO_IDT: OnceLock<&[AtomicU8]> = OnceLock::new();
 
+/// IO APIC registers (offsets into MMIO space)
 #[derive(Clone, Copy)]
 #[repr(u8)]
-/// IO APIC registers (offsets into MMIO space)
 pub enum Register {
     /// ID register
     Id = 0x00,
@@ -38,8 +38,8 @@ pub enum Register {
     Arb = 0x02,
 }
 
-#[derive(Debug)]
 /// An IO APIC that has yet to be initialized
+#[derive(Debug)]
 pub struct Uninitialized {
     /// The ID of this IO APIC
     id: u8,
@@ -63,8 +63,8 @@ impl Uninitialized {
     }
 }
 
-#[derive(Debug)]
 /// IO APIC
+#[derive(Debug)]
 pub struct IoApic {
     /// The ID of this IO APIC
     id: u8,

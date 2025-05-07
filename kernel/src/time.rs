@@ -11,20 +11,20 @@ static RDTSC_MHZ: AtomicU64 = AtomicU64::new(3_000);
 /// TSC at the time of boot of the system
 static RDTSC_START: AtomicU64 = AtomicU64::new(0);
 
-#[inline]
 /// Get the TSC rate in MHz
+#[inline]
 pub fn tsc_mhz() -> u64 {
     RDTSC_MHZ.load(Ordering::Relaxed)
 }
 
-#[inline]
 /// Returns the TSC value upon a future time in microseconds
+#[inline]
 pub fn future(ms: u64) -> u64 {
     (unsafe { cpu::rdtsc() }) + (ms * tsc_mhz())
 }
 
-#[inline]
 /// Busy sleep for a given number of microseconds
+#[inline]
 pub fn sleep(ms: u64) {
     let wait = future(ms);
     while (unsafe { cpu::rdtsc() }) < wait { core::hint::spin_loop(); }

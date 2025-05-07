@@ -2,9 +2,9 @@
 
 use core::convert::From;
 
+/// Status codes returned by EFI routines
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-/// Status codes returned by EFI routines
 pub enum Status {
     /// Operation completed successfully
     Success,
@@ -30,9 +30,9 @@ impl From<crate::efi::RawStatus> for Status {
     }
 }
 
+/// Warning codes returned by EFI routines
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-/// Warning codes returned by EFI routines
 pub enum Warning {
     /// The string contained one or more characters that the device could not
     /// render and were skipped
@@ -77,9 +77,9 @@ impl From<usize> for Warning {
     }
 }
 
+/// Error codes returned by EFI routines
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-/// Error codes returned by EFI routines
 pub enum Error {
     /// Image failed to load
     LoadError = 1,

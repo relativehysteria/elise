@@ -31,8 +31,8 @@ pub struct Tss {
     iopb_offset: u16,
 }
 
-#[repr(transparent)]
 /// The kernel GDT
+#[repr(transparent)]
 pub struct Gdt {
     /// The raw GDT entry
     pub raw: Vec<u64>,

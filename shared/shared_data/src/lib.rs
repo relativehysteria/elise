@@ -18,8 +18,6 @@ use rangeset::RangeSet;
 use elf_parser::Elf;
 use page_table::{PageTable, VirtAddr, PhysAddr};
 
-#[derive(Debug, Clone)]
-#[repr(C)]
 /// Information about the state of the bootloader. All virtual addresses are
 /// only valid within the bootloader page table.
 ///
@@ -27,6 +25,8 @@ use page_table::{PageTable, VirtAddr, PhysAddr};
 /// but _before_ the kernel was mapped in. This allows us to restore the
 /// bootloader physical memory and its virtual mappings to a sane state before
 /// mapping in the kernel and jumping to it again.
+#[derive(Debug, Clone)]
+#[repr(C)]
 pub struct BootloaderState {
     /// The bootloader page table
     pub page_table: PageTable,
@@ -38,6 +38,7 @@ pub struct BootloaderState {
     pub stack: VirtAddr,
 }
 
+/// A table of SDT entries
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct SdtTable {

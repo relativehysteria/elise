@@ -32,8 +32,8 @@ const TX_DESCS_N: usize = 256;
 const_assert!(TX_DESCS_N <= 256);
 const_assert!(TX_DESCS_N % 8 == 0);
 
-#[derive(Clone, Copy)]
 /// NIC register offsets
+#[derive(Clone, Copy)]
 struct NicRegisters {
     /// Device control
     ctrl: usize,
@@ -109,10 +109,10 @@ impl Default for NicRegisters {
     }
 }
 
+/// Intel NIC receive descriptor
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
-/// Intel NIC receive descriptor
 struct RxDescriptor {
     addr:     PhysAddr,
     len:      u16,
@@ -122,10 +122,10 @@ struct RxDescriptor {
     special:  u16,
 }
 
+/// Intel NIC legacy transmit descriptor
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
-/// Intel NIC legacy transmit descriptor
 struct LegacyTxDescriptor {
     addr:    PhysAddr,
     len:     u16,
@@ -357,9 +357,9 @@ impl IntelNic {
         unsafe { self.write(self.regs.imc, !0) }
     }
 
-    #[allow(unused)]
     /// Return a `u64`, reading `rew_high` as the high 32 bits and `reg_low` as
     /// the low 32 bits
+    #[allow(unused)]
     unsafe fn read_high_low(&self, reg_high: usize, reg_low: usize) -> u64 {
         unsafe {
             ((self.read(reg_high) as u64) << 32) | self.read(reg_low) as u64

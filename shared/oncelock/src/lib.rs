@@ -6,10 +6,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
-#[repr(C)]
 /// A synchronization primitive which can nominally be written to only once.
 ///
 /// If accessed before set, or if set multiple times, this lock will panic.
+#[repr(C)]
 pub struct OnceLock<T: Sized> {
     /// Whether the value has been initialized
     initialized: AtomicBool,
@@ -31,10 +31,10 @@ impl<T> OnceLock<T> {
         }
     }
 
-    #[track_caller]
     /// Returns the value in this lock.
     ///
     /// Panics if the value hasn't been set yet.
+    #[track_caller]
     pub fn get(&self) -> &T {
         if !self.initialized() {
             panic!("OnceLock value is not initialized");
@@ -43,10 +43,10 @@ impl<T> OnceLock<T> {
         unsafe { &*(*self.value.get()).as_ptr() }
     }
 
-    #[track_caller]
     /// Initializes the value in this lock.
     ///
     /// Panics if the value has been set already.
+    #[track_caller]
     pub fn set(&self, value: T) {
         assert!(!self.initialized.swap(true, Ordering::SeqCst),
             "OnceLock is already initialized");

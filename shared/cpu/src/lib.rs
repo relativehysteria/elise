@@ -7,8 +7,8 @@ pub use features::*;
 
 use core::arch::asm;
 
-#[inline]
 /// Halts the core in a loop forever
+#[inline]
 pub unsafe fn halt() -> ! {
     loop {
         unsafe { asm!("hlt"); }
@@ -16,48 +16,48 @@ pub unsafe fn halt() -> ! {
     }
 }
 
-#[inline]
 /// Disables the interrupts on this core
+#[inline]
 pub unsafe fn disable_interrupts() {
     unsafe { asm!("cli"); }
 }
 
-#[inline]
 /// Disables the interrupts on this core
+#[inline]
 pub unsafe fn enable_interrupts() {
     unsafe { asm!("sti"); }
 }
 
-#[inline]
 /// Read a byte from I/O port `addr`
+#[inline]
 pub unsafe fn in8(addr: u16) -> u8 {
     let mut byte: u8;
     unsafe { asm!("in al, dx", in("dx") addr, out("al") byte) };
     byte
 }
 
-#[inline]
 /// Write a `byte` to I/O port `addr`
+#[inline]
 pub unsafe fn out8(addr: u16, byte: u8) {
     unsafe { asm!("out dx, al", in("dx") addr, in("al") byte) };
 }
 
-#[inline]
 /// Read bytes from I/O port `addr`
+#[inline]
 pub unsafe fn in32(addr: u16) -> u32 {
     let mut bytes: u32;
     unsafe { asm!("in eax, dx", in("dx") addr, out("eax") bytes) };
     bytes
 }
 
-#[inline]
 /// Write `bytes` to I/O port `addr`
+#[inline]
 pub unsafe fn out32(addr: u16, bytes: u32) {
     unsafe { asm!("out dx, eax", in("dx") addr, in("eax") bytes) };
 }
 
-#[inline]
 /// Read a value from the Model-Specific Register `msr`
+#[inline]
 pub unsafe fn rdmsr(msr: u32) -> u64 {
     let high: u32;
     let low: u32;
@@ -65,36 +65,36 @@ pub unsafe fn rdmsr(msr: u32) -> u64 {
     ((high as u64) << 32) | (low as u64)
 }
 
-#[inline]
 /// Write a 64-bit `val` to the Model-Specific Register `msr`
+#[inline]
 pub unsafe fn wrmsr(msr: u32, val: u64) {
     let high = (val >> 32) as u32;
     let low = val as u32;
     unsafe { asm!("wrmsr", in("ecx") msr, in("edx") high, in("eax") low) };
 }
 
-#[inline]
 /// Set the GS base
+#[inline]
 pub unsafe fn set_gs_base(base: u64) {
     const IA32_GS_BASE: u32 = 0xC0000101;
     unsafe { wrmsr(IA32_GS_BASE, base) };
 }
 
-#[inline]
 /// Calls RDTSC
+#[inline]
 pub unsafe fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() as u64 }
 }
 
-#[inline]
 /// Canonicalizes the `addr`, making sure the highest `high_bits` are the same.
+#[inline]
 pub const fn canonicalize_address(high_bits: usize, addr: u64) -> u64 {
     assert!(high_bits < 64);
     (((addr as i64) << high_bits) >> high_bits) as u64
 }
 
-#[inline]
 /// Read `cr2`
+#[inline]
 pub fn read_cr2() -> u64 {
     let mut cr2: u64;
     unsafe { asm!("mov {}, cr2", out(reg) cr2); }

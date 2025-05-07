@@ -43,8 +43,8 @@ pub unsafe fn eoi_bitmask() -> [u128; 2] {
     bitmask
 }
 
-#[derive(Clone, Copy, Debug)]
 /// The interrupt information passed to all interrupt handlers
+#[derive(Clone, Copy, Debug)]
 pub struct InterruptArgs<'a> {
     /// The interrupt vector identifier
     pub id: InterruptId,
@@ -87,8 +87,8 @@ pub struct Interrupts {
 }
 
 impl Interrupts {
-    #[track_caller]
     /// Register an interrupt handler
+    #[track_caller]
     pub fn register(&mut self, id: InterruptId, handler: InterruptDispatch,
             eoi: bool) {
         let idx = id as usize;
@@ -108,9 +108,9 @@ impl Interrupts {
         EOI_REQUIRED[idx].store(eoi, Ordering::SeqCst);
     }
 
-    #[track_caller]
     /// Register an interrupt handler that gets handled even when EOIs are being
     /// drained
+    #[track_caller]
     pub fn register_precedent(&mut self, id: InterruptId,
             handler: InterruptDispatch, eoi: bool) {
         self.register(id, handler, eoi);
@@ -271,8 +271,8 @@ pub fn init() {
     *interrupts = Some(ints);
 }
 
-#[unsafe(no_mangle)]
 /// This is the entry point for all interrupts
+#[unsafe(no_mangle)]
 unsafe extern "sysv64" fn interrupt_entry(
     id: InterruptId,
     frame: &InterruptFrame,
@@ -365,9 +365,9 @@ Unhandled interrupt <{id:X?}>, error code <{error:#X}> on core <{core_id}>
 "#);
 }
 
+/// Legacy ISA interrupt identifiers
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 #[repr(u8)]
-/// Legacy ISA interrupt identifiers
 pub enum InterruptId {
     DivideBy0 = 0x00,
     // Reserved = 0x01,

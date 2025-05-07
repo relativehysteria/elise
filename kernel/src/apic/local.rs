@@ -284,8 +284,8 @@ impl LocalApic {
     }
 }
 
-#[derive(Default)]
 /// All of the stateful fields of the APIC timer
+#[derive(Default)]
 struct TimerState {
     /// Divide configuration register
     dcr: u32,
@@ -326,9 +326,9 @@ enum ApicMode {
     X2Apic,
 }
 
+/// APIC registers (offsets into MMIO space)
 #[derive(Clone, Copy)]
 #[repr(u16)]
-/// APIC registers (offsets into MMIO space)
 pub enum Register {
     /// APIC ID register
     Id = 0x20,

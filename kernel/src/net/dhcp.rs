@@ -4,9 +4,9 @@ use alloc::sync::Arc;
 
 use crate::net::NetDevice;
 
+/// DHCP message header
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, packed)]
-/// DHCP message header
 struct Header {
     /// Message op code / message type
     op: u8,
@@ -54,9 +54,9 @@ struct Header {
     file: [u64; 128 / 8],
 }
 
+/// DHCP op code / message type
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-/// DHCP op code / message type
 enum Opcode {
     /// Boot request
     Request = 1,
@@ -65,21 +65,21 @@ enum Opcode {
     Reply = 2,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
 /// ARP hardware type
 ///
 /// [Source](https://www.iana.org/assignments/arp-parameters/arp-parameters.xhtml#arp-parameters-2)
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 enum HardwareType {
     /// Ethernet (10Mb)
     Ethernet = 1,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
 /// DHCP client-server message type
 ///
 /// [Source](https://datatracker.ietf.org/doc/html/rfc2131#section-3.1)
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 enum MessageType {
     Discover = 1,
     Offer    = 2,

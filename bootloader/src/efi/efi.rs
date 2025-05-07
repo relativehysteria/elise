@@ -12,23 +12,23 @@ pub type ImageHandle = Handle;
 /// the [`Status`] value using `from()`
 pub type RawStatus = isize;
 
-#[derive(Copy, Clone)]
-#[repr(transparent)]
 /// A pointer to the system table that was passed to our bootloader by UEFI.
 /// This struct exists only to take ownership of the pointer and to make it
 /// impossible for other code to use when we don't want to
+#[derive(Copy, Clone)]
+#[repr(transparent)]
 pub struct SystemTablePtr(pub *mut SystemTable);
 
-#[repr(transparent)]
 /// A pointer to the bootloader image that was passed to us by UEFI.
 /// This struct exists only to take ownership of the pointer and to make it
 /// impossible for other code to use when we don't want to
+#[repr(transparent)]
 pub struct BootloaderImagePtr(pub ImageHandle);
 
+/// UEFI defined global unique ID
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(C, packed)]
 #[allow(missing_docs)]
-/// UEFI defined global unique ID
 pub struct Guid {
     pub d1: u32,
     pub d2: u16,
@@ -43,9 +43,9 @@ impl Guid {
     }
 }
 
+/// Structure that precedes all of the standard EFI table types
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
-/// Structure that precedes all of the standard EFI table types
 pub struct TableHeader {
     /// Signature that identifies the type of table that follows
     pub signature: u64,
@@ -66,9 +66,9 @@ pub struct TableHeader {
     reserved: u32
 }
 
+/// Contains pointers to the runtime and boot services tables
 #[allow(dead_code)]
 #[repr(C)]
-/// Contains pointers to the runtime and boot services tables
 pub struct SystemTable {
     /// The table header for this table
     pub header: TableHeader,
@@ -101,10 +101,10 @@ pub struct SystemTable {
     pub cfg_tables: *const ConfigTable,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[repr(C)]
 /// Contains a set of GUID/pointer pairs compromised of the `cfg_table` field in
 /// the [`SystemTable`]
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(C)]
 pub struct ConfigTable {
     /// GUID identifying the configuration table
     pub guid: Guid,
@@ -113,9 +113,9 @@ pub struct ConfigTable {
     pub table: *const usize,
 }
 
+/// Containes pointers to all of the boot services
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
-/// Containes pointers to all of the boot services
 pub struct BootServices {
     /// The table header for this struct
     pub header: TableHeader,

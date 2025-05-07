@@ -4,8 +4,8 @@ pub mod acpi;
 
 pub use acpi::*;
 
-#[derive(Debug)]
 /// Errors possibly returned by ACPI routines
+#[derive(Debug)]
 pub enum Error {
     /// ACPI 2.0 table couldn't be found
     Acpi20NotFound,

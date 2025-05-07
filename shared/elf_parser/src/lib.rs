@@ -28,6 +28,7 @@ macro_rules! get_bytes_no_err {
 /// Virtual size type for better readability
 pub type VirtSize = u64;
 
+/// Errors returned by the parser
 #[derive(Debug, Clone)]
 pub enum Error {
     /// The byte data couldn't be parsed
@@ -64,8 +65,8 @@ pub enum Error {
     SegmentsClosureFailed,
 }
 
-#[derive(Debug, Clone)]
 /// Permission bits for memory segments
+#[derive(Debug, Clone)]
 pub struct Permissions {
     /// Marks the memory as readable
     pub read: bool,
@@ -92,8 +93,8 @@ impl Permissions {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Represents a loadable segment in the ELF file
+#[derive(Debug, Clone)]
 pub struct Segment<'a> {
     /// Aligned virtual address of the segment
     pub vaddr: VirtAddr,
@@ -111,8 +112,8 @@ pub struct Segment<'a> {
     pub permissions: Permissions,
 }
 
-#[derive(Debug, Clone)]
 /// An iterator of `Segment`
+#[derive(Debug, Clone)]
 pub struct ElfSegments<'a> {
     /// Reference to the parsed ELF file
     elf: &'a Elf<'a>,
@@ -189,8 +190,8 @@ impl<'a> core::iter::Iterator for ElfSegments<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
 /// A validated ELF file
+#[derive(Debug, Clone)]
 pub struct Elf<'a> {
     /// Raw bytes of the ELF file
     bytes: &'a [u8],

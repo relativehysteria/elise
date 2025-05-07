@@ -10,8 +10,8 @@ use crate::efi::acpi::Error;
 pub const ACPI_20_TABLE_GUID: Guid = Guid::new(
     0x8868e871,0xe4f1,0x11d3, [0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81]);
 
-#[derive(Debug, PartialEq)]
 /// Types of tables recognized by this lib -- used for error handling
+#[derive(Debug, PartialEq)]
 pub enum Table {
     /// Root system descriptor pointer
     Rsdp,
@@ -33,9 +33,9 @@ impl Table {
     }
 }
 
+/// Root system descriptor pointer
 #[derive(Debug)]
 #[repr(packed)]
-/// Root system descriptor pointer
 struct Rsdp {
     /// `RSD PTR `
     signature: [u8; 8],
@@ -107,9 +107,9 @@ impl Rsdp {
     }
 }
 
+/// Header present in all SDTs
 #[derive(Debug)]
 #[repr(C)]
-/// Header present in all SDTs
 struct SdtHeader {
     /// ASCII string representation of the table identifier
     signature: [u8; 4],

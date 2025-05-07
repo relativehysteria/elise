@@ -57,8 +57,8 @@ pub unsafe fn register_numa(ad: ApicDomains, mut md: MemoryDomains) {
     APIC_TO_MEM_RANGE.set(mappings.leak());
 }
 
-#[track_caller]
 /// Offset a physical address into our physical window
+#[track_caller]
 pub fn phys_ptr(addr: PhysAddr) -> VirtAddr {
     VirtAddr(addr.0.checked_add(KERNEL_PHYS_WINDOW_BASE)
         .expect("Overflow when offsetting into physical window"))
@@ -93,8 +93,8 @@ pub fn receive_vaddr_4k(size: u64) -> VirtAddr {
     VirtAddr(ret)
 }
 
-#[inline]
 /// Get mutable access to a slice of physical memory
+#[inline]
 pub fn slice_phys_mut<'a>(paddr: PhysAddr, size: u64) -> &'a mut [u8] {
     // Make sure the address doesn't overflow
     let end = size.checked_sub(1).and_then(|x| {
@@ -207,7 +207,6 @@ impl FreeList {
         Self { head: VirtAddr(0), size }
     }
 
-    #[inline]
     /// If the blocks backed by this freelist fit into a 4-KiB page,
     /// allocate the page from our _physical memory_ to back the blocks.
     ///
@@ -215,6 +214,7 @@ impl FreeList {
     /// better for TLBs and caches.
     ///
     /// Panics if the blocks backed by this freelist don't fit into a page.
+    #[inline]
     fn allocate_page_for_blocks(&mut self) {
         let page_size = PageType::Page4K as u64;
         // Make sure we're not allocating for a block that can't be backed by it
@@ -239,9 +239,9 @@ impl FreeList {
         }
     }
 
-    #[inline]
     /// Allocate a new virtual mapping for a block size backed by this freelist
     /// and return the mapping
+    #[inline]
     fn allocate_virt_block(&mut self) -> VirtAddr {
         // Get a virtual address for this allocation
         let vaddr = receive_vaddr_4k(self.size as u64);
@@ -451,20 +451,20 @@ impl<T> core::ops::DerefMut for ContigPageAligned<T> {
     }
 }
 
-#[alloc_error_handler]
 /// Handler for allocation errors, likely OOMs;
 /// simply panic, notifying that we can't satisfy the allocation
+#[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
     panic!("Allocation error!");
 }
 
-#[global_allocator]
 /// Global allocator for the kernel
+#[global_allocator]
 pub static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator;
 
-#[derive(Debug)]
 /// A structure that implements `GlobalAlloc` such that we can use it as the
 /// global allocator
+#[derive(Debug)]
 pub struct GlobalAllocator;
 
 unsafe impl GlobalAlloc for GlobalAllocator {

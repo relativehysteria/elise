@@ -7,8 +7,8 @@ use cpu;
 /// Addresses of the legacy serial ports that are to be used by this driver
 pub const PORT_ADDRESSES: [u16; 4] = [0x2F8, 0x3F8, 0x2E8, 0x3E8];
 
-#[derive(Clone, Debug)]
 /// The serial driver implementation for COM ports defined by `PORT_ADDRESSES`
+#[derive(Clone, Debug)]
 pub struct SerialDriver {
     /// Index map of which ports in `PORT_ADDRESSES` are valid.
     pub ports: [Option<u16>; PORT_ADDRESSES.len()]

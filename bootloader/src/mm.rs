@@ -5,10 +5,10 @@ use rangeset::{ RangeSet, Range };
 use page_table::{PhysAddr, PhysMem};
 use crate::SHARED;
 
-#[repr(transparent)]
 /// Wrapper around a rangeset that implements the `PhysMem` trait.
 ///
 /// Required for manipulating page tables in the bootloader
+#[repr(transparent)]
 pub struct PhysicalMemory<'a>(pub &'a mut RangeSet);
 
 impl<'a> PhysMem for PhysicalMemory<'a> {
@@ -49,17 +49,17 @@ pub fn init(memory: RangeSet) {
     *free_mem = Some(memory);
 }
 
-#[alloc_error_handler]
 /// Handler for allocation error, likely OOMs;
 /// simply panic, notifying that we can't satisfy the allocation.
+#[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
     panic!("Allocation error!");
 }
 
-#[global_allocator]
 /// Global allocator for the bootloader; this just uses physical memory as a
 /// backlog and __doesn't__ handle fragmentation. Only memory that won't have to
 /// be freed between soft reboots should be allocated to prevent fragmentation.
+#[global_allocator]
 static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator;
 
 /// Dummy structure that implements the [`GlobalAlloc`] trait

@@ -13,8 +13,8 @@ use crate::mm::{phys_ptr, register_numa};
 /// Flag showing that a table entry is enabled
 pub const ENABLED: u32 = 1 << 0;
 
-#[derive(Debug, PartialEq)]
 /// Types of tables recognized by this lib -- used for error handling
+#[derive(Debug, PartialEq)]
 pub enum Table {
     /// Multiple APIC description table
     Madt,
@@ -37,9 +37,9 @@ impl Table {
     }
 }
 
+/// Header present in all SDTs
 #[derive(Debug)]
 #[repr(C)]
-/// Header present in all SDTs
 pub struct SdtHeader {
     /// ASCII string representation of the table identifier
     pub signature: [u8; 4],

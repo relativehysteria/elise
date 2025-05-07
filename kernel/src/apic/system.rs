@@ -64,14 +64,14 @@ pub fn check_in() {
     }
 }
 
-#[track_caller]
 /// Set the current execution state of a given APIC ID
+#[track_caller]
 pub unsafe fn set_core_state(id: u32, state: ApicState) {
     APIC_STATES.get()[id as usize].store(state as u8, Ordering::SeqCst);
 }
 
-#[track_caller]
 /// Get the APIC state of a given APIC ID
+#[track_caller]
 pub fn core_state(id: u32) -> ApicState {
     APIC_STATES.get()[id as usize].load(Ordering::SeqCst).into()
 }
@@ -82,9 +82,9 @@ pub type ApicDomains = BTreeMap<u32, u32>;
 /// Memory domain to physical memory ranges mapping
 pub type MemoryDomains = BTreeMap<u32, RangeSet>;
 
+/// The possible states of APICs
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
-/// The possible states of APICs
 pub enum ApicState {
     /// The core is registered in the kernel and is running
     Online = 1,
