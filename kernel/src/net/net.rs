@@ -12,6 +12,7 @@ use spinlock::SpinLock;
 
 use crate::mm::ContigPageAligned;
 use crate::core_locals::InterruptLock;
+use crate::net::dhcp;
 
 /// All net devices registered during the PCI probing process. When the
 /// probing process ends, these will be locked into `NET_DEVICES`, which
@@ -37,6 +38,9 @@ pub struct NetDevice {
 
     /// The MAC address of this device
     mac: Mac,
+
+    /// The DHCP lease for this device
+    pub dhcp_lease: SpinLock<Option<dhcp::Lease>, InterruptLock>,
 }
 
 impl NetDevice {
@@ -86,6 +90,7 @@ impl NetDevice {
 
         // Create a new `Arc<NetDevice>`
         let nd = Arc::new(Self {
+            dhcp_lease: SpinLock::new(None),
             mac: driver.mac(),
             driver,
             id,
@@ -98,9 +103,30 @@ impl NetDevice {
     /// Lock in all of the registered net devices on the system, marking them
     /// for use
     pub fn lock_in() {
+        // Take the netdevices from the register
         let devs = PROBED_DEVICES.lock().take()
             .expect("Net devices locked in already!");
-        NET_DEVICES.set(devs.into_boxed_slice());
+
+        // If we can't get a DHCP lease for some device, we won't use it
+        let mut leased_devs = Vec::with_capacity(devs.len());
+
+        // Attempt to get a DHCP lease for all devices
+        for dev in devs {
+            // Get the lease
+            let lease = dhcp::get_lease(dev.clone());
+
+            // Assign the lease
+            let mut dev_lease = dev.dhcp_lease.lock();
+            *dev_lease = lease;
+
+            // If we actually got a lease, save this device
+            if dev_lease.is_some() {
+                leased_devs.push(dev.clone());
+            }
+        }
+
+        // Save the devices that got a DHCP lease
+        NET_DEVICES.set(leased_devs.into_boxed_slice());
     }
 
     /// Get the device's unique identifier
