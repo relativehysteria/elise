@@ -3,7 +3,8 @@
 use alloc::sync::Arc;
 use alloc::collections::VecDeque;
 
-use crate::net::{ParseError, NetDevice, Port, Ip, Packet};
+use crate::net::{
+    ParseError, NetDevice, Port, Ip, Packet, PacketLease, NetAddress};
 
 /// A parsed UDP header and payload
 pub struct Udp<'a> {
@@ -39,6 +40,36 @@ impl UdpBind {
     pub fn device(&self) -> &NetDevice {
         &*self.dev
     }
+
+    /// Attempt to receive a UDP packet on the bound port
+    pub fn recv<T, F>(&self, mut func: F) -> Option<T>
+    where
+        F: FnMut(&Packet, Udp) -> Option<T>,
+    {
+        self.device().recv_udp(self.port, &mut func)
+    }
+
+    /// Attempts to receive a UDP packet on the bound port for `timeout` μs
+    pub fn recv_timeout<T, F>(&self, mut func: F, timeout: u64) -> Option<T>
+    where
+        F: FnMut(&Packet, Udp) -> Option<T>,
+    {
+        let timeout = crate::time::future(timeout);
+        loop {
+            // Return nothing on timeout
+            if cpu::rdtsc() >= timeout { return None; }
+
+            if let Some(val) = self.device().recv_udp(self.port, &mut func) {
+                return Some(val)
+            }
+        }
+    }
+}
+
+impl Drop for UdpBind {
+    fn drop(&mut self) {
+        self.dev.unbind_udp(self.port);
+    }
 }
 
 impl Packet {
@@ -73,7 +104,6 @@ impl Packet {
             ip,
         })
     }
-
 }
 
 impl NetDevice {
@@ -103,5 +133,79 @@ impl NetDevice {
         core::mem::drop(udp_binds);
 
         Some(UdpBind { dev, port, })
+    }
+
+    /// Unbind from a UDP port
+    fn unbind_udp(&self, port: Port) {
+        if let Some(queue) = self.udp_binds.lock().remove(&port) {
+            queue.into_iter()
+                .for_each(|packet| self.driver().release_packet(packet));
+        }
+    }
+
+
+    /// Receive a UDP packet destined to `port`
+    fn recv_udp<T, F>(&self, port: Port, func: &mut F) -> Option<T>
+    where
+        F: FnMut(&Packet, Udp) -> Option<T>
+    {
+        // If there's a packet in the queue, return it
+        {
+            let mut binds = self.udp_binds.lock();
+
+            let ent = binds.get_mut(&port)?;
+            if !ent.is_empty() {
+                let packet = ent.pop_front().unwrap();
+                let ret = func(&packet, packet.udp().unwrap());
+                self.driver().release_packet(packet);
+                return ret
+            }
+        }
+
+        // No packet in the queue. Attempt to recv a new raw packet
+        let packet = self.recv()?;
+
+        // Attempt to parse the packet as UDP
+        if let Ok(udp) = packet.udp() {
+            // If it was destined to our port, return it
+            if udp.dst_port == port {
+                func(&*packet, udp)
+            } else {
+                self.discard(packet);
+                None
+            }
+        } else {
+            self.discard(packet);
+            None
+        }
+    }
+
+    /// Discard a UDP packet which was unhandled by this device and must be
+    /// handled by another device which is expecting it
+    ///
+    /// Returns whether the `packet` has been handled by this function
+    pub fn discard_udp(&self, packet: PacketLease) -> bool {
+        // Parse the packet as UDP
+        let udp = match packet.udp() {
+            Ok(udp) => udp,
+            _       => return false,
+        };
+
+        // Check if we are bound on this packet's port
+        let mut binds = self.udp_binds.lock();
+        let bind = match binds.get_mut(&udp.dst_port) {
+            Some(b) => b,
+            None    => return false,
+        };
+
+        // We are bound on the packet's port, put it into queue if there's
+        // space, otherwise drop it
+        if bind.len() < bind.capacity() {
+            bind.push_back(PacketLease::take(packet));
+        } else {
+            // Drop
+        }
+
+        return true;
     }
 }

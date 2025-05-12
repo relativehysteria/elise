@@ -110,6 +110,10 @@ pub struct NetDevice {
 
     /// Packet queues for bound UDP ports
     pub udp_binds: SpinLock<BTreeMap<Port, VecDeque<Packet>>, InterruptLock>,
+
+    // TODO:
+    // pub tcp_connections:
+    //    SpinLock<BTreeMap<Port, Arc<SpinLock<TcpConnection, InterruptLock>>>>,
 }
 
 impl NetDevice {
@@ -199,6 +203,10 @@ impl NetDevice {
         NET_DEVICES.set(leased_devs.into_boxed_slice());
     }
 
+    pub fn discard(&self, packet: PacketLease) {
+        self.discard_udp(packet);
+    }
+
     /// Get the device's unique identifier
     pub fn id(&self) -> usize {
         self.id
@@ -225,6 +233,10 @@ impl NetDevice {
     /// Get this device's MAC address
     pub fn mac(&self) -> Mac {
         self.mac
+    }
+
+    pub fn driver(&self) -> Arc<dyn NetDriver> {
+        self.driver.clone()
     }
 }
 
