@@ -20,25 +20,25 @@ pub fn tsc_mhz() -> u64 {
 /// Returns the TSC value upon a future time in microseconds
 #[inline]
 pub fn future(ms: u64) -> u64 {
-    (unsafe { cpu::rdtsc() }) + (ms * tsc_mhz())
+    cpu::rdtsc() + (ms * tsc_mhz())
 }
 
 /// Busy sleep for a given number of microseconds
 #[inline]
 pub fn sleep(ms: u64) {
     let wait = future(ms);
-    while (unsafe { cpu::rdtsc() }) < wait { core::hint::spin_loop(); }
+    while cpu::rdtsc() < wait { core::hint::spin_loop(); }
 }
 
 /// Using the PIT, determine the frequency of rdtsc. Round this frequency to
 /// the nearest 100MHz and return it.
 pub unsafe fn calibrate() {
     // Store off the current rdtsc value
-    let start = unsafe { cpu::rdtsc() };
+    let start = cpu::rdtsc();
     RDTSC_START.store(start, Ordering::Relaxed);
 
     // Start a timer
-    let start = unsafe { cpu::rdtsc() };
+    let start = cpu::rdtsc();
 
     // Program the PIT to use mode 0 (interrupt after countdown) to
     // count down from 65535. This causes an interrupt to occur after
@@ -64,7 +64,7 @@ pub unsafe fn calibrate() {
     }
 
     // Stop the timer
-    let end = unsafe { cpu::rdtsc() };
+    let end = cpu::rdtsc();
 
     // Compute the time, in seconds, that the countdown was supposed to
     // take

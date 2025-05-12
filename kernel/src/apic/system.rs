@@ -33,7 +33,7 @@ pub fn check_in() {
     static CORES_CHECKED_IN: AtomicU32 = AtomicU32::new(0);
 
     // Transition from launched to online
-    let apic_id = unsafe { core!().apic_id().unwrap() as usize };
+    let apic_id = core!().apic_id().unwrap() as usize;
     let old_state = APIC_STATES.get()[apic_id]
         .compare_exchange(ApicState::Launched as u8,
                           ApicState::Online   as u8,
@@ -66,7 +66,7 @@ pub fn check_in() {
 
 /// Set the current execution state of a given APIC ID
 #[track_caller]
-pub unsafe fn set_core_state(id: u32, state: ApicState) {
+pub fn set_core_state(id: u32, state: ApicState) {
     APIC_STATES.get()[id as usize].store(state as u8, Ordering::SeqCst);
 }
 
@@ -132,8 +132,8 @@ pub fn init_system(apics: Vec<u32>) {
     });
 
     // Mark the current core as online
-    let cur_id = unsafe { core!().apic_id().unwrap() };
-    unsafe { set_core_state(cur_id, ApicState::Online); }
+    let cur_id = core!().apic_id().unwrap();
+    set_core_state(cur_id, ApicState::Online);
 
     // Save the total number of cores on the system. This will be used during
     // the `check_in()` loop to wait for all cores to come online.
@@ -160,13 +160,13 @@ pub fn init_system(apics: Vec<u32>) {
     // Launch all other cores.
 
     // Acquire exclusive access to the APIC for this core
-    let mut apic = unsafe { core!().apic().lock() };
+    let mut apic = core!().apic().lock();
     let apic = apic.as_mut().unwrap();
 
     // Go through all APICs on the system, skipping this core
     for &id in apics.iter().filter(|&&id| id != cur_id) {
         // Mark the core as launched
-        unsafe { set_core_state(id, ApicState::Launched); }
+        set_core_state(id, ApicState::Launched);
 
         // INIT-SIPI-SIPI; launch the core
         let entry = (ENTRY_ADDR / 0x1000) as u32;

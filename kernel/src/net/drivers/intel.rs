@@ -262,7 +262,7 @@ impl IntelNic {
         // Create the NIC struct
         let mut nic = Self {
             mmio,
-            mac: Mac([0; 6]),
+            mac: Default::default(),
             regs: Default::default(),
             rx_state: SpinLock::new(RxState {
                 descs:   rx_descs,
@@ -275,7 +275,7 @@ impl IntelNic {
                 head:    0,
                 tail:    0,
             }),
-            packets: SpinLock::new(Vec::new()),
+            packets: SpinLock::new(Vec::with_capacity(TX_DESCS_N + RX_DESCS_N)),
         };
 
         // Reset the NIC and initialize it for receive and transmit

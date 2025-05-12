@@ -14,5 +14,5 @@ fn panic(info: &PanicInfo) -> ! {
     print_shatter!(" {} ----\n", info.message());
 
     // And halt
-    unsafe { cpu::halt() };
+    cpu::halt();
 }

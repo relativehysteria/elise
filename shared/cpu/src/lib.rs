@@ -9,7 +9,7 @@ use core::arch::asm;
 
 /// Halts the core in a loop forever
 #[inline]
-pub unsafe fn halt() -> ! {
+pub fn halt() -> ! {
     loop {
         unsafe { asm!("hlt"); }
         core::hint::spin_loop();
@@ -82,7 +82,7 @@ pub unsafe fn set_gs_base(base: u64) {
 
 /// Calls RDTSC
 #[inline]
-pub unsafe fn rdtsc() -> u64 {
+pub fn rdtsc() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() as u64 }
 }
 

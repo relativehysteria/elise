@@ -7,14 +7,12 @@ use core::alloc::Layout;
 use page_table::VirtAddr;
 use shared_data::Shared;
 use spinlock::{SpinLock, InterruptState, DummyInterruptState};
+use oncelock::OnceLock;
 use autorefcount::{AutoRefCount, AutoRefCountGuard};
 
 use crate::mm::FreeList;
 use crate::interrupts::Interrupts;
 use crate::apic::LocalApic;
-
-/// The value in `CoreLocals.apic_id` if the APIC is uninitialized
-const APIC_UNINIT: u32 = u32::MAX;
 
 /// The cumulative variable used for allocating core IDs
 static NEXT_CORE_ID: AtomicU32 = AtomicU32::new(0);
@@ -56,7 +54,7 @@ pub struct CoreLocals {
     apic: SpinLock<Option<LocalApic>, InterruptLock>,
 
     /// Local APIC id.
-    apic_id: AtomicU32,
+    apic_id: OnceLock<u32>,
 
     /// The number of requests to have interrupts disabled.
     ///
@@ -84,7 +82,7 @@ pub struct CoreLocals {
 
 impl CoreLocals {
     /// Get a free list which can satisfy `layout`
-    pub unsafe fn free_list(&self, layout: Layout)
+    pub fn free_list(&self, layout: Layout)
             -> &SpinLock<FreeList, InterruptLock> {
         // The minimum freelist allocation is 8 bytes. Round up if needed
         let size = core::cmp::max(layout.size(), 8);
@@ -112,27 +110,25 @@ impl CoreLocals {
     }
 
     /// Get access to the interrupt table
-    pub unsafe fn interrupts(&self)
-            -> &SpinLock<Option<Interrupts>, InterruptLock> {
+    pub fn interrupts(&self) -> &SpinLock<Option<Interrupts>, InterruptLock> {
         &self.interrupts
     }
 
     /// Get access to the local APIC
-    pub unsafe fn apic(&self) -> &SpinLock<Option<LocalApic>, InterruptLock> {
+    pub fn apic(&self) -> &SpinLock<Option<LocalApic>, InterruptLock> {
         &self.apic
     }
 
     /// Set the current core's APIC ID
-    pub unsafe fn set_apic_id(&self, apic_id: u32) {
-        self.apic_id.store(apic_id, Ordering::SeqCst);
+    ///
+    /// This function can be only called once
+    pub fn set_apic_id(&self, apic_id: u32) {
+        self.apic_id.set(apic_id);
     }
 
     /// Get access to the current core's APIC ID if initialized
-    pub unsafe fn apic_id(&self) -> Option<u32> {
-        match self.apic_id.load(Ordering::SeqCst) {
-            APIC_UNINIT => None,
-            x           => Some(x),
-        }
+    pub fn apic_id(&self) -> Option<u32> {
+        self.apic_id.initialized().then_some(*self.apic_id.get())
     }
 
     /// Get the preferred memory range for the currently running core.
@@ -273,7 +269,7 @@ pub fn init(shared: page_table::PhysAddr) {
         },
 
         apic: SpinLock::new_no_preempt(None),
-        apic_id: AtomicU32::new(APIC_UNINIT),
+        apic_id: OnceLock::new(),
 
         interrupts: SpinLock::new_no_preempt(None),
         exception_depth: AutoRefCount::new(0),

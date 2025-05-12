@@ -193,7 +193,7 @@ impl TablePtr {
 /// and NMI interrupts and setup an IDT.
 pub fn init() {
     // Get access to the interrupts. Don't reinitialize them
-    let mut interrupts = unsafe { core!().interrupts().lock() };
+    let mut interrupts = core!().interrupts().lock();
     assert!(interrupts.is_none(), "Interrupts already initialized!");
 
     // Create the GDT

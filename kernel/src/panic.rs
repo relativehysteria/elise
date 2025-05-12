@@ -54,7 +54,7 @@ pub fn panic(info: &PanicInfo) -> ! {
         }
 
         // Halt the core forever
-        unsafe { cpu::halt(); }
+        cpu::halt();
     }
 
     // At this point, we know that the BSP has panicked. Sent an NMI to all
@@ -117,7 +117,7 @@ unsafe fn disable_cores(apic: &mut LocalApic) {
     assert!(core!().is_bsp(), "Attempted to disable other cores on non-BSP");
 
     // Send out NMIs to all non-BSP cores and wait for them to halt
-    if let Some(bsp_id) = unsafe { core!().apic_id() } {
+    if let Some(bsp_id) = core!().apic_id() {
         // Only shut down the other APICs if they were initialized
         if !MAX_APIC_ID.initialized() { return; }
 

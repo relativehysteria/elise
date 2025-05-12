@@ -33,7 +33,7 @@ pub fn mem_range<'a>() -> Option<&'a RangeSet> {
     let mapping = APIC_TO_MEM_RANGE.get();
 
     // Look up and return the preferred memory range
-    unsafe { core!().apic_id().and_then(|x| mapping[x as usize].as_ref()) }
+    core!().apic_id().and_then(|x| mapping[x as usize].as_ref())
 }
 
 /// Registers NUMA mappings with the allocator. From this call on, all

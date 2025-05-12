@@ -42,5 +42,5 @@ extern "sysv64" fn entry(shared: page_table::PhysAddr) -> ! {
     // Check in that this core has booted and is ready!
     kernel::apic::check_in();
 
-    unsafe { cpu::halt(); }
+    cpu::halt();
 }

@@ -2,17 +2,17 @@
 
 use alloc::sync::Arc;
 
-use crate::net::NetDevice;
+use crate::net::{NetDevice, Port};
 
 /// DHCP message header
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, packed)]
 struct Header {
-    /// Message op code / message type
-    op: u8,
+    /// Message opcode
+    op: Opcode,
 
     /// Hardware address type
-    htype: u8,
+    htype: HardwareType,
 
     /// Hardware address length
     hlen: u8,
@@ -47,9 +47,11 @@ struct Header {
     /// Client hardware address
     chaddr: [u8; 16],
 
+    // The u64 here is just a hack to allow it to derive Default
     /// Optional null-terminated server host name
     sname: [u64; 64 / 8],
 
+    // The u64 here is just a hack to allow it to derive Default
     /// Boot file name
     file: [u64; 128 / 8],
 }
@@ -57,12 +59,16 @@ struct Header {
 /// DHCP op code / message type
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(missing_docs)]
 enum Opcode {
-    /// Boot request
     Request = 1,
-
-    /// Boot reply
     Reply = 2,
+}
+
+impl Default for Opcode {
+    fn default() -> Self {
+        Self::Request
+    }
 }
 
 /// ARP hardware type
@@ -70,9 +76,24 @@ enum Opcode {
 /// [Source](https://www.iana.org/assignments/arp-parameters/arp-parameters.xhtml#arp-parameters-2)
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(missing_docs)]
 enum HardwareType {
-    /// Ethernet (10Mb)
     Ethernet = 1,
+}
+
+impl HardwareType {
+    /// Get the hardware address length based on this type
+    fn hlen(&self) -> u8 {
+        match self {
+            Self::Ethernet => 6,
+        }
+    }
+}
+
+impl Default for HardwareType {
+    fn default() -> Self {
+        Self::Ethernet
+    }
 }
 
 /// DHCP client-server message type
@@ -80,6 +101,7 @@ enum HardwareType {
 /// [Source](https://datatracker.ietf.org/doc/html/rfc2131#section-3.1)
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(missing_docs)]
 enum MessageType {
     Discover = 1,
     Offer    = 2,
@@ -104,5 +126,15 @@ pub struct Lease;
 
 /// Attempt to get a DHCP lease for `dev`
 pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
+    // Get a unique transaction ID
+    let xid = cpu::rdtsc() as u32;
+
+    // Get the device's MAC
+    let mac = dev.mac();
+
+    // Bind to the client DHCP port
+    let bind = NetDevice::bind_udp_port(dev.clone(), Port(68))
+        .expect("Could not bind to port 68");
+
     None
 }

@@ -4,7 +4,8 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use alloc::collections::{BTreeMap, VecDeque};
+use core::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use core::net::Ipv4Addr;
 
 use oncelock::OnceLock;
@@ -24,9 +25,74 @@ static PROBED_DEVICES: SpinLock<Option<Vec<Arc<NetDevice>>>, InterruptLock> =
 static NET_DEVICES: OnceLock<Box<[Arc<NetDevice>]>> = OnceLock::new();
 
 /// The MAC address of a NIC
-#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Mac(pub [u8; 6]);
+
+/// A network port
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Port(pub u16);
+
+impl Port {
+    /// Allocates a new port within the IANA ephemeral/dynamic range
+    /// (`49152..u16::MAX)`.
+    ///
+    /// Note: This is a logical allocation - it does not check actual port
+    /// availability. That is, This port may be already bound if explicitly
+    /// bound by the user, at which point this function should be called again
+    /// to receive the next possibly still unbound port.
+    pub fn next_free() -> Self {
+        /// This is the first port that has been specified by IANA as
+        /// ephemeral/dynamic.
+        const EPHEMERAL_START: u16 = 49152;
+
+        /// The next free port that can be allocated by a function, guaranteed
+        /// to be ephemeral as specified by IANA.
+        static NEXT_FREE_PORT: AtomicU16 = AtomicU16::new(EPHEMERAL_START);
+
+        // Get the next free port, wrapping around to ephemeral start
+        let port = NEXT_FREE_PORT.fetch_update(
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+            |prev| {
+                if prev == u16::MAX {
+                    Some(EPHEMERAL_START)
+                } else {
+                    Some(prev + 1)
+                }
+            })
+        .unwrap();
+
+        Self(port)
+    }
+}
+
+/// UDP/TCP address
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(missing_docs)]
+pub struct NetAddress {
+    pub src_mac:  Mac,
+    pub src_ip:   Ipv4Addr,
+    pub src_port: Port,
+
+    pub dst_mac:  Mac,
+    pub dst_ip:   Ipv4Addr,
+    pub dst_port: Port,
+}
+
+impl Default for NetAddress {
+    fn default() -> Self {
+        Self {
+            src_mac:  Default::default(),
+            dst_mac:  Default::default(),
+            src_port: Default::default(),
+            dst_port: Default::default(),
+            src_ip:   Ipv4Addr::from_bits(u32::default()),
+            dst_ip:   Ipv4Addr::from_bits(u32::default()),
+        }
+    }
+}
 
 /// A networking capable device
 pub struct NetDevice {
@@ -41,6 +107,9 @@ pub struct NetDevice {
 
     /// The DHCP lease for this device
     pub dhcp_lease: SpinLock<Option<dhcp::Lease>, InterruptLock>,
+
+    /// Packet queues for bound UDP ports
+    pub udp_binds: SpinLock<BTreeMap<Port, VecDeque<Packet>>, InterruptLock>,
 }
 
 impl NetDevice {
@@ -92,6 +161,7 @@ impl NetDevice {
         let nd = Arc::new(Self {
             dhcp_lease: SpinLock::new(None),
             mac: driver.mac(),
+            udp_binds: SpinLock::new(BTreeMap::new()),
             driver,
             id,
         });
@@ -151,6 +221,11 @@ impl NetDevice {
     pub fn allocate_packet(&self) -> Packet {
         self.driver.allocate_packet()
     }
+
+    /// Get this device's MAC address
+    pub fn mac(&self) -> Mac {
+        self.mac
+    }
 }
 
 /// The driver trait that allows access to NIC RX and TX
@@ -202,9 +277,11 @@ pub enum ParseError {
     /// array
     InvalidMacAddress,
 
-    /// The Ethernet type field could not be parsed due to incorrect byte size
-    /// or layout
-    InvalidEtherType,
+    /// Attempted to parse a big-endian `u16` but got an error
+    InvalidWord,
+
+    /// Attempted to parse a big-endian `u32` but got an error
+    InvalidDword,
 
     /// The Ethernet frame indicates a version we do not support
     UnsupportedVersion,
@@ -214,6 +291,9 @@ pub enum ParseError {
 
     /// The IP header included options which we do not support
     IpOptionsUnsupported,
+
+    /// Attempted to parse an IP packet but got invalid protocol
+    InvalidIpProtocol,
 
     /// Fragmentation is not supported and the packet is either fragmented or
     /// has disallowed flags set
@@ -241,6 +321,7 @@ pub struct Ethernet<'a> {
 }
 
 /// A parsed IP header and payload
+#[derive(Debug)]
 pub struct Ip<'a> {
     /// Ethernet header
     pub eth: Ethernet<'a>,
@@ -284,8 +365,7 @@ impl Packet {
 
         let dst_mac = Self::parse_mac(raw.get(0x0..0x6))?;
         let src_mac = Self::parse_mac(raw.get(0x6..0xC))?;
-        let eth_type = Self::parse_u16(
-            raw.get(0xC..0xE), ParseError::InvalidEtherType)?;
+        let eth_type = Self::parse_u16(raw.get(0xC..0xE))?;
         let payload = raw.get(0xE..).ok_or(ParseError::TruncatedPacket)?;
 
         Ok(Ethernet { dst_mac, src_mac, eth_type, payload })
@@ -314,8 +394,7 @@ impl Packet {
         }
 
         // Get the total length of the hader and the payload
-        let total_length = Self::parse_u16(
-            Some(&header[2..4]), ParseError::InvalidLength)? as usize;
+        let total_length = Self::parse_u16(Some(&header[2..4]))? as usize;
 
         // Get the flags and make sure the reserved bit and fragments are clear
         // as we do not support fragmentation yet
@@ -325,8 +404,7 @@ impl Packet {
         }
 
         // Make sure there's actually no fragmentation
-        let frag_offset = Self::parse_u16(
-            Some(&header[6..8]), ParseError::InvalidIpHeader)?;
+        let frag_offset = Self::parse_u16(Some(&header[6..8]))?;
         if (frag_offset & 0x1FFF) != 0 {
             return Err(ParseError::FragmentationUnsupported)
         }
@@ -339,7 +417,7 @@ impl Packet {
         let dst_ip = Self::parse_u32(Some(&header[16..20]))?.into();
 
         // Validate the total length
-        if total_length > eth.payload.len() {
+        if total_length < 20 || total_length > eth.payload.len() {
             return Err(ParseError::InvalidLength);
         }
 
@@ -359,19 +437,19 @@ impl Packet {
     }
 
     /// Helper function to parse a `u16` from a packet
-    fn parse_u16(b: Option<&[u8]>, err: ParseError) -> Result<u16, ParseError> {
+    pub fn parse_u16(b: Option<&[u8]>) -> Result<u16, ParseError> {
         let slice = b.ok_or(ParseError::TruncatedPacket)?;
         slice.try_into()
             .map(u16::from_be_bytes)
-            .map_err(|_| err)
+            .map_err(|_| ParseError::InvalidWord)
     }
 
     /// Helper function to parse a `u32` from an IP packet
-    fn parse_u32(b: Option<&[u8]>) -> Result<u32, ParseError> {
-        let slice = b.ok_or(ParseError::InvalidIpHeader)?;
+    pub fn parse_u32(b: Option<&[u8]>) -> Result<u32, ParseError> {
+        let slice = b.ok_or(ParseError::TruncatedPacket)?;
         slice.try_into()
             .map(u32::from_be_bytes)
-            .map_err(|_| ParseError::InvalidIpHeader)
+            .map_err(|_| ParseError::InvalidDword)
     }
 
     /// Compute a ones-complement checksum over the provided byte slice.

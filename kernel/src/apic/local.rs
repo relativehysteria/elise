@@ -402,7 +402,7 @@ pub enum Register {
 /// If supported, will use x2APIC
 pub unsafe fn init() {
     // Don't reinitialize the APIC
-    let mut cur_apic = unsafe { core!().apic().lock() };
+    let mut cur_apic = core!().apic().lock();
     assert!(cur_apic.is_none(), "APIC already initialized!");
 
     // Get the CPU features
@@ -499,6 +499,6 @@ pub unsafe fn init() {
     }
 
     // Set the core's APIC id and reference
-    unsafe { core!().set_apic_id(apic.id()); }
+    core!().set_apic_id(apic.id());
     *cur_apic = Some(apic);
 }

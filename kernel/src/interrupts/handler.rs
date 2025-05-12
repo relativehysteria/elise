@@ -26,11 +26,9 @@ pub unsafe fn nmi(args: InterruptArgs) -> bool {
     if core!().is_bsp() {
         panic!("Panic occured on another core");
     } else {
-        unsafe {
-            // Set that we're halted and halt forever
-            set_core_state(core!().apic_id().unwrap(), ApicState::Halted);
-            cpu::halt();
-        }
+        // Set that we're halted and halt forever
+        set_core_state(core!().apic_id().unwrap(), ApicState::Halted);
+        cpu::halt();
     }
 }
 
