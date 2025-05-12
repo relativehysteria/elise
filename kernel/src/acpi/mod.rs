@@ -1,6 +1,6 @@
 //! ACPI definitions
 
-pub mod acpi;
+mod acpi;
 mod madt;
 mod srat;
 
