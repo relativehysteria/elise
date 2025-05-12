@@ -43,6 +43,11 @@ impl<T> OnceLock<T> {
         unsafe { &*(*self.value.get()).as_ptr() }
     }
 
+    /// Returns the value in this lock if it has been initialized
+    pub fn try_get(&self) -> Option<&T> {
+        self.initialized().then(|| self.get())
+    }
+
     /// Initializes the value in this lock.
     ///
     /// Panics if the value has been set already.

@@ -128,7 +128,7 @@ impl CoreLocals {
 
     /// Get access to the current core's APIC ID if initialized
     pub fn apic_id(&self) -> Option<u32> {
-        self.apic_id.initialized().then_some(*self.apic_id.get())
+        self.apic_id.try_get().copied()
     }
 
     /// Get the preferred memory range for the currently running core.
