@@ -13,9 +13,9 @@
 /// - Enforcing a strict write limit that, when exceeded, causes writes to fail.
 /// - Splitting the buffer using `split_at()` methods while maintaining a correct
 ///   `total_pos`, representing the absolute position across the original buffer.
-pub struct Cursor<'a> {
+pub struct Cursor<'a, T: Copy> {
     /// The current mutable view of the buffer slice
-    inner: &'a mut [u8],
+    inner: &'a mut [T],
 
     /// Maximum number of bytes that can be written through this cursor over all
     /// splits
@@ -28,9 +28,9 @@ pub struct Cursor<'a> {
     total_pos: usize,
 }
 
-impl<'a> Cursor<'a> {
+impl<'a, T: Copy> Cursor<'a, T> {
     /// Creates a new cursor wrapping the provided underlying in-memory buffer.
-    pub fn new(inner: &'a mut [u8]) -> Self {
+    pub fn new(inner: &'a mut [T]) -> Self {
         Self {
             inner,
             pos: 0,
@@ -41,7 +41,7 @@ impl<'a> Cursor<'a> {
 
     /// Creates a new cursor wrapping the provided underlying in-memory buffer,
     /// setting the maximum write limit of the buffer to `limit`
-    pub fn new_with_limit(inner: &'a mut [u8], limit: usize) -> Self {
+    pub fn new_with_limit(inner: &'a mut [T], limit: usize) -> Self {
         Self {
             inner,
             pos: 0,
@@ -51,17 +51,17 @@ impl<'a> Cursor<'a> {
     }
 
     /// Consumes this cursor and return the underlying buffer
-    pub fn into_inner(self) -> &'a mut [u8] {
+    pub fn into_inner(self) -> &'a mut [T] {
         self.inner
     }
 
     /// Gets a reference to the underlying buffer
-    pub const fn get_ref(&self) -> &[u8] {
+    pub const fn get_ref(&self) -> &[T] {
         &*self.inner
     }
 
     /// Gets a mutable reference to the underlying buffer
-    pub const fn get_mut(&mut self) -> &mut [u8] {
+    pub const fn get_mut(&mut self) -> &mut [T] {
         self.inner
     }
 
@@ -139,7 +139,7 @@ impl<'a> Cursor<'a> {
     /// Append the contents `buf` to the end of the underlying buffer
     ///
     /// On success, returns the position before the write and after the write
-    pub fn write(&mut self, buf: &[u8]) -> Option<(usize, usize)> {
+    pub fn write(&mut self, buf: &[T]) -> Option<(usize, usize)> {
         // Set the new position
         let cur_pos = self.pos;
         let new_pos = cur_pos.checked_add(buf.len())?;
@@ -163,14 +163,14 @@ impl<'a> Cursor<'a> {
     ///
     /// Will panic if the split would result in an out-of-bounds access or if
     /// the total position would overflow its limit.
-    pub fn split_at(self, raw_idx: usize) -> (&'a mut [u8], Self) {
+    pub fn split_at(self, raw_idx: usize) -> (&'a mut [T], Self) {
         self.split_at_checked(raw_idx)
             .expect("Attempted to split cursor with overflow")
     }
 
     /// Non-panic version of `split_at()`
     pub fn split_at_checked(mut self, raw_idx: usize)
-            -> Option<(&'a mut [u8], Self)> {
+            -> Option<(&'a mut [T], Self)> {
         // Don't overflow the buffer length
         if raw_idx > self.inner.len() {
             return None;
