@@ -163,13 +163,13 @@ impl<'a> Cursor<'a> {
     ///
     /// Will panic if the split would result in an out-of-bounds access or if
     /// the total position would overflow its limit.
-    pub fn split_at_mut(self, raw_idx: usize) -> (&'a mut [u8], Self) {
-        self.split_at_mut_checked(raw_idx)
+    pub fn split_at(self, raw_idx: usize) -> (&'a mut [u8], Self) {
+        self.split_at_checked(raw_idx)
             .expect("Attempted to split cursor with overflow")
     }
 
-    /// Non-panic version of `split_at_mut()`
-    pub fn split_at_mut_checked(mut self, raw_idx: usize)
+    /// Non-panic version of `split_at()`
+    pub fn split_at_checked(mut self, raw_idx: usize)
             -> Option<(&'a mut [u8], Self)> {
         // Don't overflow the buffer length
         if raw_idx > self.inner.len() {
