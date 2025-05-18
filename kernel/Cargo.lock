@@ -19,6 +19,10 @@ name = "cpu"
 version = "0.1.0"
 
 [[package]]
+name = "cursor"
+version = "0.1.0"
+
+[[package]]
 name = "elf_parser"
 version = "0.1.0"
 dependencies = [
@@ -33,6 +37,7 @@ dependencies = [
  "const_assert",
  "core_reqs",
  "cpu",
+ "cursor",
  "oncelock",
  "page_table",
  "rangeset",

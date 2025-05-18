@@ -12,5 +12,6 @@ core_reqs = { path = "../shared/core_reqs" }
 oncelock = { path = "../shared/oncelock" }
 spinlock = { path = "../shared/spinlock" }
 rangeset = { path = "../shared/rangeset" }
+cursor = { path = "../shared/cursor" }
 serial = { path = "../shared/serial/" }
 cpu = { path = "../shared/cpu" }

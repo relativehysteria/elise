@@ -12,7 +12,8 @@ use page_table::{
 
 use crate::pci::{DeviceConfig, Device, BarBits, BarType};
 use crate::mm;
-use crate::net::{NetDriver, NetDevice, Mac, Packet, PacketLease};
+use crate::net::{NetDriver, NetDevice, Mac};
+use crate::net::packet::{Packet, PacketLease};
 use crate::core_locals::InterruptLock;
 
 /// The Intel NICs map in 128KiB of memory
@@ -466,8 +467,11 @@ impl NetDriver for IntelNic {
         // Pad packet if smaller than minimum size
         if packet.len() < PACKET_MIN_SIZE {
             let len = packet.len();
-            packet.raw_mut()[len..PACKET_MIN_SIZE].fill(0);
-            packet.set_len(PACKET_MIN_SIZE);
+            let needed = PACKET_MIN_SIZE - len;
+
+            let cursor = packet.cursor();
+            let (buf, _) = cursor.split_at(len + needed);
+            buf[len..].fill(0);
         }
 
         // Wait until there's space in the TX ring

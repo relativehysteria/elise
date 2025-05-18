@@ -4,6 +4,8 @@
 //! functionality needed for fine-grained memory operations, such as write limits
 //! and safe splitting of the buffer while maintaining consistent cursor state.
 
+#![no_std]
+
 #[cfg(test)] mod tests;
 
 /// A cursor over a mutable byte slice that supports write limiting and accurate
@@ -55,14 +57,15 @@ impl<'a, T: Copy> Cursor<'a, T> {
         self.inner
     }
 
-    /// Gets a reference to the underlying buffer
-    pub const fn get_ref(&self) -> &[T] {
-        &*self.inner
+    /// Gets a reference to the underlying buffer up until the current position
+    pub fn get(&self) -> &[T] {
+        &self.inner[..self.pos]
     }
 
-    /// Gets a mutable reference to the underlying buffer
-    pub const fn get_mut(&mut self) -> &mut [T] {
-        self.inner
+    /// Gets a mutable reference to the underlying buffer up until the current
+    /// position
+    pub fn get_mut(&mut self) -> &mut [T] {
+        &mut self.inner[..self.pos]
     }
 
     /// Gets the current position of this cursor into the underlying buffer
@@ -151,8 +154,17 @@ impl<'a, T: Copy> Cursor<'a, T> {
         Some((cur_pos, new_pos))
     }
 
+    /// Splits the cursor at the current position
+    pub fn split_at_current(self) -> (&'a mut [T], Self) {
+        let pos = self.pos;
+        self.split_at(pos)
+    }
+
     /// Splits the current buffer at the given index, returning a mutable slice
     /// up to that point and a new cursor over the remaining buffer.
+    /// The mutable slice will be assumed initialized and as such, the returned
+    /// cursor's `overall_position()` will never be less than the mutable
+    /// slice's length.
     ///
     /// * The cursor state is preserved such that the total position and
     ///   relative position get updated correctly.
