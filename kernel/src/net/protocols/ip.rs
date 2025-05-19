@@ -24,9 +24,9 @@ pub struct ParsedV4<'a> {
 
 impl Packet {
     /// Parse the IP header
-    pub fn ipv4(&self) -> Result<ParsedV4, ParseError> {
+    pub fn parse_ipv4(&self) -> Result<ParsedV4, ParseError> {
         // Parse the Ethernet header
-        let eth = self.eth()?;
+        let eth = self.parse_eth()?;
 
         // We handle IPv4 only for now
         const ETH_TYPE_IPV4: u16 =  0x0800;

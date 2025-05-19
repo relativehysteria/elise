@@ -19,7 +19,7 @@ pub struct Parsed<'a> {
 
 impl Packet {
     /// Parse the ethernet header
-    pub fn eth(&self) -> Result<Parsed, ParseError> {
+    pub fn parse_eth(&self) -> Result<Parsed, ParseError> {
         let raw = self.raw();
 
         let dst_mac = Self::parse_mac(raw.get(0x0..0x6))?;

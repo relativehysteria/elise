@@ -33,6 +33,11 @@ pub type Payload<'a> = &'a mut [u8];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Mac(pub [u8; 6]);
 
+impl Mac {
+    /// MAC address used for broadcasts
+    pub const BROADCAST: Mac = Mac([0xFF; 6]);
+}
+
 /// A network port
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -185,28 +190,30 @@ impl NetDevice {
         let devs = PROBED_DEVICES.lock().take()
             .expect("Net devices locked in already!");
 
-        // // If we can't get a DHCP lease for some device, we won't use it
-        // let mut leased_devs = Vec::with_capacity(devs.len());
+        // If we can't get a DHCP lease for some device, we won't use it
+        let mut leased_devs = Vec::with_capacity(devs.len());
 
-        // // Attempt to get a DHCP lease for all devices
-        // for dev in devs {
-        //     // Get the lease
-        //     let lease = dhcp::get_lease(dev.clone());
+        // Attempt to get a DHCP lease for all devices
+        for dev in devs {
+            // Get the lease
+            let lease = dhcp::get_lease(dev.clone());
 
-        //     // Assign the lease
-        //     let mut dev_lease = dev.dhcp_lease.lock();
-        //     *dev_lease = lease;
+            // Assign the lease
+            let mut dev_lease = dev.dhcp_lease.lock();
+            *dev_lease = lease;
 
-        //     // If we actually got a lease, save this device
-        //     if dev_lease.is_some() {
-        //         leased_devs.push(dev.clone());
-        //     }
-        // }
+            // If we actually got a lease, save this device
+            if dev_lease.is_some() {
+                leased_devs.push(dev.clone());
+            }
+        }
 
         // Save the devices that got a DHCP lease
-        NET_DEVICES.set(devs.into_boxed_slice());
+        NET_DEVICES.set(leased_devs.into_boxed_slice());
     }
 
+    /// Discard a packet which was unhandled and thus may be handled by
+    /// something else that is expecting it
     pub fn discard(&self, packet: PacketLease) {
         self.discard_udp(packet);
     }

@@ -51,7 +51,7 @@ impl UdpBind {
     }
 
     /// Attempts to receive a UDP packet on the bound port for `timeout` μs
-    pub fn recv_timeout<T, F>(&self, mut func: F, timeout: u64) -> Option<T>
+    pub fn recv_timeout<T, F>(&self, timeout: u64, mut func: F) -> Option<T>
     where
         F: FnMut(&Packet, Parsed) -> Option<T>,
     {
@@ -123,7 +123,7 @@ impl NetDevice {
             let ent = binds.get_mut(&port)?;
             if !ent.is_empty() {
                 let packet = ent.pop_front().unwrap();
-                let ret = func(&packet, packet.udp().unwrap());
+                let ret = func(&packet, packet.parse_udp().unwrap());
                 self.driver().release_packet(packet);
                 return ret
             }
@@ -133,7 +133,7 @@ impl NetDevice {
         let packet = self.recv()?;
 
         // Attempt to parse the packet as UDP
-        if let Ok(udp) = packet.udp() {
+        if let Ok(udp) = packet.parse_udp() {
             // If it was destined to our port, return it
             if udp.dst_port == port {
                 func(&*packet, udp)
@@ -153,7 +153,7 @@ impl NetDevice {
     /// Returns whether the `packet` has been handled by this function
     pub fn discard_udp(&self, packet: PacketLease) -> bool {
         // Parse the packet as UDP
-        let udp = match packet.udp() {
+        let udp = match packet.parse_udp() {
             Ok(udp) => udp,
             _       => return false,
         };
@@ -179,9 +179,9 @@ impl NetDevice {
 
 impl Packet {
     /// Parse UDP information from the packet
-    pub fn udp(&self) -> Result<Parsed, ParseError> {
+    pub fn parse_udp(&self) -> Result<Parsed, ParseError> {
         // Parse the IP information header
-        let ip = self.ipv4()?;
+        let ip = self.parse_ipv4()?;
 
         /// UDP protocol for the IP header
         const IP_PROT_UDP: u8 = 0x11;
@@ -209,6 +209,13 @@ impl Packet {
             ip,
         })
     }
+
+    /// Create a UDP packet builder out of this packet
+    pub fn create_udp<'a: 'b, 'b>(&'a mut self, addr: &'b NetAddress)
+            -> Builder<'b> {
+        Builder::from_packet(self.cursor(), addr)
+            .expect("Couldn't create a UDP packet")
+    }
 }
 
 impl<'a> ip::BuilderV4<'a> {
@@ -233,9 +240,9 @@ struct ToFill {
 
 /// Builder for UDP headers
 pub struct Builder<'a> {
-    ip: ip::BuilderV4<'a>,
-    hdr: &'a mut [u8],
-    payload: PacketCursor<'a>,
+    pub(super) ip:      ip::BuilderV4<'a>,
+    pub(super) hdr:     &'a mut [u8],
+    pub(super) payload: PacketCursor<'a>,
     to_fill: ToFill,
 }
 

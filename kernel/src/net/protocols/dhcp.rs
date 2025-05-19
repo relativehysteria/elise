@@ -2,17 +2,27 @@
 
 #![allow(dead_code)]
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::net::Ipv4Addr;
 
-use crate::net::{NetDevice, Port};
+use crate::net::{NetDevice, Port, NetAddress, Mac};
+use crate::net::protocols::udp;
+use crate::net::packet::Packet;
+
+/// Amount of time in microseconds to wait for a DHCP response.
+/// If a response doesn't come within this timeout, the process will be aborted
+const DHCP_TIMEOUT: u64 = 5_000_000;
 
 /// DHCP port of the client
 const DHCP_CLIENT_PORT: Port = Port(68);
 
 /// DHCP port of the server
 const DHCP_SERVER_PORT: Port = Port(67);
+
+/// The magic DHCP cookie
+const DHCP_COOKIE: u32 = 0x63825363;
 
 /// DHCP message header
 #[derive(Debug, Clone, Copy, Default)]
@@ -64,10 +74,37 @@ struct Header {
     // The u64 here is just a hack to allow it to derive Default
     /// Boot file name
     file: [u64; 128 / 8],
+
+    /// The magic DHCP cookie
+    cookie: u32,
+}
+
+/// Builder for a list of `DhcpOption`s
+struct DhcpOptionsBuilder {
+    inner: Vec<u8>,
+}
+
+impl DhcpOptionsBuilder {
+    /// Creates a new options builder
+    pub fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    /// Adds an option to this builder
+    pub fn add(&mut self, option: DhcpOption) -> &mut Self {
+        option.serialize(&mut self.inner);
+        self
+    }
+
+    /// Finishes building the options and returns the serialized slice
+    pub fn end(mut self) -> Box<[u8]> {
+        DhcpOption::End.serialize(&mut self.inner);
+        self.inner.into_boxed_slice()
+    }
 }
 
 /// DHCP options
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(missing_docs)]
 enum DhcpOption<'a> {
     Pad,
@@ -84,6 +121,7 @@ enum DhcpOption<'a> {
 }
 
 /// Mapping of DHCP options to their IDs
+#[derive(Debug, PartialEq, Eq)]
 #[repr(u8)]
 #[allow(missing_docs)]
 enum DhcpOptionId {
@@ -233,7 +271,7 @@ impl<'a> DhcpOption<'a> {
 }
 
 /// DHCP op code / message type
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[allow(missing_docs)]
 enum Opcode {
@@ -250,7 +288,7 @@ impl Default for Opcode {
 /// ARP hardware type
 ///
 /// [Source](https://www.iana.org/assignments/arp-parameters/arp-parameters.xhtml#arp-parameters-2)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[allow(missing_docs)]
 enum HardwareType {
@@ -298,47 +336,209 @@ impl From<u8> for MessageType {
     }
 }
 
-pub struct Lease;
+/// A DHCP lease
+#[derive(Debug, Clone, Copy)]
+pub struct Lease {
+    pub client_ip:    Ipv4Addr,
+    pub server_ip:    Ipv4Addr,
+    pub broadcast_ip: Option<Ipv4Addr>,
+    pub subnet_mask:  Option<Ipv4Addr>,
+}
 
 /// Attempt to get a DHCP lease for `dev`
 pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
-    // Get a unique transaction ID
-    let _xid = cpu::rdtsc() as u32;
+    let xid = cpu::rdtsc() as u32;
+    let mac = dev.mac();
+    let bind = NetDevice::bind_udp_port(dev.clone(), DHCP_CLIENT_PORT)?;
 
-    // Get the device's MAC
-    let _mac = dev.mac();
+    let send_dhcp_request = |msg_type: MessageType, extra_opts: &[DhcpOption]| {
+        let mut opts = DhcpOptionsBuilder::new();
+        opts
+            .add(DhcpOption::MessageType(msg_type))
+            .add(DhcpOption::ParameterRequestList(&[
+                DhcpOptionId::MessageType as u8,
+                DhcpOptionId::ServerIp    as u8,
+                DhcpOptionId::BroadcastIp as u8,
+                DhcpOptionId::SubnetMask  as u8,
+            ]));
 
-    // Bind to the client DHCP port
-    let _bind = NetDevice::bind_udp_port(dev.clone(), DHCP_CLIENT_PORT)
-        .expect("Could not bind to port 68");
+        for opt in extra_opts.into_iter() {
+            opts.add(opt.clone());
+        }
 
-    // Construct the DHCP options for the discover
-    let mut options = Vec::new();
-    DhcpOption::MessageType(MessageType::Discover).serialize(&mut options);
-    DhcpOption::ParameterRequestList(&[
-        DhcpOptionId::MessageType as u8,
-        DhcpOptionId::ServerIp as u8,
-    ]).serialize(&mut options);
-    DhcpOption::End.serialize(&mut options);
+        let mut packet = dev.allocate_packet();
+        packet.create_dhcp_request(xid, mac, &opts.end());
+        dev.send(packet, true);
+    };
 
-    // Send the packet
-    let _packet = dev.allocate_packet();
+    // Discover phase
+    send_dhcp_request(MessageType::Discover, &[]);
 
-    None
+    // Attempt to get the offer IP and server IP
+    let mut offered_ip: Option<Ipv4Addr> = None;
+    let mut server_ip:  Option<Ipv4Addr> = None;
+    bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
+        // Accept packets destined for us
+        let dst_mac = udp.ip.eth.dst_mac;
+        if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
+
+        // Attempt to parse the packet as a DHCP reply
+        let (header, options) = udp.parse_dhcp_reply(xid)?;
+
+        // We're looking for an offer now
+        options.iter()
+            .find(|&x| *x == DhcpOption::MessageType(MessageType::Offer))?;
+
+        // Save the offered IP
+        offered_ip = Some(u32::from_be(header.yiaddr).into());
+
+        // Save the server IP as well
+        server_ip = options.iter().find_map(|x| {
+            if let DhcpOption::ServerIp(ip) = x {
+                Some(*ip)
+            } else { None }
+        });
+
+        Some(())
+    })?;
+
+    // Make sure we've received the required IPs
+    let offered_ip = offered_ip?;
+    let server_ip  = server_ip?;
+
+    // Request phase
+    send_dhcp_request(MessageType::Request, &[
+        DhcpOption::RequestedIp(offered_ip),
+        DhcpOption::ServerIp(server_ip),
+    ]);
+
+    // Attempt to get the broadcast IP and the subnet mask
+    let mut broadcast_ip: Option<Ipv4Addr> = None;
+    let mut subnet_mask:  Option<Ipv4Addr> = None;
+    bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
+        // Accept packets destined for us
+        if udp.ip.eth.dst_mac != mac { return None; }
+
+        // Attempt to parse the packet as a DHCP reply
+        let (_header, options) = udp.parse_dhcp_reply(xid)?;
+
+        // We're looking for an ACK now
+        options.iter()
+            .find(|&x| *x == DhcpOption::MessageType(MessageType::Ack))?;
+
+        // Save the broadcast IP
+        broadcast_ip = options.iter().find_map(|x| {
+            if let DhcpOption::BroadcastIp(ip) = x {
+                Some(*ip)
+            } else { None }
+        });
+
+        // Save the subnet_mask
+        subnet_mask = options.iter().find_map(|x| {
+            if let DhcpOption::SubnetMask(ip) = x {
+                Some(*ip)
+            } else { None }
+        });
+
+        Some(())
+    })?;
+
+    Some(Lease {
+        client_ip: offered_ip,
+        server_ip,
+        broadcast_ip,
+        subnet_mask,
+    })
 }
 
-// /// Create a DHCP packet
-// fn create_dhcp_packet(packet: &mut Packet, xid: u32, mac: Mac, options: &[u8]) {
-//     // Create the broadcast address info
-//     let addr = NetAddress {
-//         src_mac:  mac,
-//         dst_mac:  Mac([0xFF; 6]),
-//         src_ip:   Ipv4Addr::from_bits(0),
-//         dst_ip:   Ipv4Addr::from_bits(!0),
-//         src_port: DHCP_CLIENT_PORT,
-//         dst_port: DHCP_SERVER_PORT,
-//     };
-//
-//     // Create the UDP packet
-//     let mut pkt = packet.create_udp(&addr);
-// }
+impl<'a> udp::Parsed<'a> {
+    /// Attempt to parse a DHCPREPLY packet
+    fn parse_dhcp_reply(&self, xid: u32)
+            -> Option<(Header, Vec<DhcpOption<'a>>)> {
+        let (header_bytes, mut raw_options) = self.payload
+            .split_at_checked(core::mem::size_of::<Header>())?;
+
+        // Parse each header field
+        let op = *header_bytes.get(0)?;
+        let htype = *header_bytes.get(1)?;
+        let hlen = *header_bytes.get(2)?;
+        let cookie = u32::from_be_bytes(
+            header_bytes.get(24..28)?.try_into().ok()?);
+        let xid_parsed = u32::from_be_bytes(
+            header_bytes.get(4..8)?.try_into().ok()?);
+
+        // Verify transaction ID matches
+        if xid_parsed != xid {
+            return None;
+        }
+
+        // Check header validity
+        if !(op == Opcode::Reply as u8
+            && htype == HardwareType::Ethernet as u8
+            && hlen == HardwareType::Ethernet.hlen()
+            && cookie == DHCP_COOKIE)
+        {
+            return None;
+        }
+
+        // Parse DHCP options
+        let mut options = Vec::new();
+        while !raw_options.is_empty() {
+            if let Some(option) = DhcpOption::parse(&mut raw_options) {
+                options.push(option);
+            } else {
+                break;
+            }
+        }
+
+        // Reconstruct the header with properly parsed fields
+        let header = unsafe { &*(header_bytes.as_ptr() as *const Header) };
+
+        Some((*header, options))
+    }
+}
+
+impl Packet {
+    /// Creates a finalized DHCPREQUEST out of this packet
+    fn create_dhcp_request(&mut self, xid: u32, mac: Mac, options: &[u8]) {
+        // Initialize the address
+        let addr = NetAddress {
+            src_mac: mac,
+            dst_mac: Mac::BROADCAST,
+            src_ip: Ipv4Addr::from_bits(0),
+            dst_ip: Ipv4Addr::from_bits(!0),
+            src_port: DHCP_CLIENT_PORT,
+            dst_port: DHCP_SERVER_PORT,
+        };
+
+        // Create a UDP builder
+        let mut builder = self.create_udp(&addr);
+
+        {
+            // Write in the empty DHCP header
+            builder.write(&[0; core::mem::size_of::<Header>()]);
+
+            // Cast the payload bytes as the header
+            let header: &mut Header = unsafe {
+                &mut *(builder.payload.get_mut().as_mut_ptr() as *mut Header)
+            };
+
+            // Fill the header in
+            header.op    = Opcode::Request;
+            header.htype = HardwareType::Ethernet;
+            header.hlen  = header.htype.hlen();
+            header.xid   = xid.to_be();
+
+            // Set our MAC
+            header.chaddr[..6].copy_from_slice(&mac.0);
+
+            // Set the DHCP cookie
+            header.cookie = DHCP_COOKIE.to_be();
+        }
+
+        // Write in the options
+        builder.write(options);
+
+        // Here the builder will get dropped and finalized
+    }
+}
