@@ -1,4 +1,4 @@
-//! DHCP implementation
+//! L4: DHCP implementation
 
 #![allow(dead_code)]
 

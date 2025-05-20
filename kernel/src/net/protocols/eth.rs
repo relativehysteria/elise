@@ -1,3 +1,5 @@
+//! L1: Ethernet implementation
+
 use crate::net::Mac;
 use crate::net::packet::{Packet, PacketCursor, ParseError};
 

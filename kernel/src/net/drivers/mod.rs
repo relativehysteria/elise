@@ -1,3 +1,4 @@
 //! Drivers for various network devices
 
-pub mod intel;
+mod intel;
+pub use intel::*;

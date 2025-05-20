@@ -1,4 +1,4 @@
-//! Intel e1000/e drivers
+//! Intel e1000 driver
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -165,8 +165,8 @@ struct RxState {
     head: usize,
 }
 
-/// The Intel gigabit network device
-struct IntelNic {
+/// The Intel e1000 gigabit network device
+pub struct IntelNic {
     /// Register offsets for this NIC
     regs: NicRegisters,
 
@@ -187,7 +187,7 @@ struct IntelNic {
 }
 
 impl IntelNic {
-    fn new(device: DeviceConfig) -> Self {
+    pub fn new(device: DeviceConfig) -> Self {
         // Make sure BAR0 is a memory bar
         assert!(BarType::from_bar(device.bar0) == BarType::Memory,
             "Intel NIC BAR0 not a memory BAR");

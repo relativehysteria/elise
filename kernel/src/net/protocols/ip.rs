@@ -1,3 +1,5 @@
+//! L2: IP implementation
+
 use core::net::Ipv4Addr;
 
 use crate::net::protocols::eth;
