@@ -133,7 +133,6 @@ struct LegacyTxDescriptor {
     cso:     u8,
     cmd:     u8,
     status:  u8,
-    rsv:     u8,
     css:     u8,
     special: u16,
 }
@@ -470,8 +469,9 @@ impl NetDriver for IntelNic {
             let needed = PACKET_MIN_SIZE - len;
 
             let cursor = packet.cursor();
-            let (buf, _) = cursor.split_at(len + needed);
-            buf[len..].fill(0);
+            let (_, cursor) = cursor.split_at_current();
+            let (buf, _) = cursor.split_at(needed);
+            buf.fill(0);
         }
 
         // Wait until there's space in the TX ring
@@ -493,7 +493,7 @@ impl NetDriver for IntelNic {
         }
 
         // Fill in the TX descriptor
-        let idx = tx_state.tail & tx_state.descs.len();
+        let idx = tx_state.tail % tx_state.descs.len();
         tx_state.descs[idx] = LegacyTxDescriptor {
             // Report status, insert FCS, end of packet
             cmd: (1 << 3) | (1 << 1) | (1 << 0),
@@ -528,9 +528,10 @@ impl NetDriver for IntelNic {
         self.packets.lock().pop().unwrap_or_else(|| Packet::new())
     }
 
-    fn release_packet(&self, packet: Packet) {
+    fn release_packet(&self, mut packet: Packet) {
         let mut packets = self.packets.lock();
         if packets.len() < packets.capacity() {
+            packet.clear();
             packets.push(packet)
         }
     }

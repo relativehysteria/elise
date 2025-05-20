@@ -128,6 +128,11 @@ impl Packet {
         self.length = len;
     }
 
+    /// Sets the len of the packet to `0`
+    pub fn clear(&mut self) {
+        self.set_len(0);
+    }
+
     /// Provides a cursor to modify the packet's buffer, ensuring length is
     /// tracked and limited to maximum packet length
     pub fn cursor(&mut self) -> PacketCursor {

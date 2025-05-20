@@ -8,6 +8,7 @@ use crate::net::{NetDevice, Port, NetAddress};
 use crate::net::protocols::{ip, eth};
 
 /// A parsed UDP header and payload
+#[derive(Debug)]
 pub struct Parsed<'a> {
     /// IP header
     pub ip: ip::ParsedV4<'a>,

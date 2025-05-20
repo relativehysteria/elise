@@ -417,7 +417,8 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     let mut subnet_mask:  Option<Ipv4Addr> = None;
     bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
         // Accept packets destined for us
-        if udp.ip.eth.dst_mac != mac { return None; }
+        let dst_mac = udp.ip.eth.dst_mac;
+        if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
 
         // Attempt to parse the packet as a DHCP reply
         let (_header, options) = udp.parse_dhcp_reply(xid)?;
@@ -443,40 +444,41 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
         Some(())
     })?;
 
-    Some(Lease {
+    // Return the lease
+    let lease = Lease {
         client_ip: offered_ip,
         server_ip,
         broadcast_ip,
         subnet_mask,
-    })
+    };
+    println!("Got DHCP lease for {mac:X?}! {lease:#X?}");
+    Some(lease)
 }
 
 impl<'a> udp::Parsed<'a> {
     /// Attempt to parse a DHCPREPLY packet
     fn parse_dhcp_reply(&self, xid: u32)
             -> Option<(Header, Vec<DhcpOption<'a>>)> {
+
+        // Get the header and the options
         let (header_bytes, mut raw_options) = self.payload
             .split_at_checked(core::mem::size_of::<Header>())?;
 
-        // Parse each header field
-        let op = *header_bytes.get(0)?;
-        let htype = *header_bytes.get(1)?;
-        let hlen = *header_bytes.get(2)?;
-        let cookie = u32::from_be_bytes(
-            header_bytes.get(24..28)?.try_into().ok()?);
-        let xid_parsed = u32::from_be_bytes(
-            header_bytes.get(4..8)?.try_into().ok()?);
+        // Cast the header bytes as the header
+        let header = unsafe { &*(header_bytes.as_ptr() as *const Header) };
+        let cookie = u32::from_be(header.cookie);
+        let header_xid = u32::from_be(header.xid);
 
         // Verify transaction ID matches
-        if xid_parsed != xid {
+        if header_xid != xid {
             return None;
         }
 
         // Check header validity
-        if !(op == Opcode::Reply as u8
-            && htype == HardwareType::Ethernet as u8
-            && hlen == HardwareType::Ethernet.hlen()
-            && cookie == DHCP_COOKIE)
+        if header.op != Opcode::Reply
+            || header.htype != HardwareType::Ethernet
+            || header.hlen != HardwareType::Ethernet.hlen()
+            || cookie != DHCP_COOKIE
         {
             return None;
         }
@@ -491,15 +493,13 @@ impl<'a> udp::Parsed<'a> {
             }
         }
 
-        // Reconstruct the header with properly parsed fields
-        let header = unsafe { &*(header_bytes.as_ptr() as *const Header) };
-
         Some((*header, options))
     }
 }
 
 impl Packet {
-    /// Creates a finalized DHCPREQUEST out of this packet
+    /// Creates a finalized DHCPREQUEST out of this packet, using `mac` as the
+    /// source MAC address
     fn create_dhcp_request(&mut self, xid: u32, mac: Mac, options: &[u8]) {
         // Initialize the address
         let addr = NetAddress {
