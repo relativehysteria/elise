@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use alloc::collections::{BTreeMap, VecDeque};
 use core::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
-use core::net::Ipv4Addr;
+use core::net::{IpAddr, Ipv4Addr};
 
 use oncelock::OnceLock;
 use spinlock::SpinLock;
@@ -82,11 +82,11 @@ impl Port {
 #[allow(missing_docs)]
 pub struct NetAddress {
     pub src_mac:  Mac,
-    pub src_ip:   Ipv4Addr,
+    pub src_ip:   IpAddr,
     pub src_port: Port,
 
     pub dst_mac:  Mac,
-    pub dst_ip:   Ipv4Addr,
+    pub dst_ip:   IpAddr,
     pub dst_port: Port,
 }
 
@@ -97,8 +97,8 @@ impl Default for NetAddress {
             dst_mac:  Default::default(),
             src_port: Default::default(),
             dst_port: Default::default(),
-            src_ip:   Ipv4Addr::from_bits(u32::default()),
-            dst_ip:   Ipv4Addr::from_bits(u32::default()),
+            src_ip:   IpAddr::V4(Ipv4Addr::from_bits(u32::default())),
+            dst_ip:   IpAddr::V4(Ipv4Addr::from_bits(u32::default())),
         }
     }
 }

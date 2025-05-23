@@ -1,9 +1,13 @@
-//! L2: IP implementation
+//! L2: IPv4 implementation
 
 use core::net::Ipv4Addr;
 
 use crate::net::protocols::eth;
 use crate::net::packet::{Packet, ParseError, PacketCursor};
+use crate::net::protocols::ip::{TransportProtocol, IpBuilder};
+
+/// Ethernet type for IPv4
+const ETH_TYPE_IPV4: u16 = 0x0800;
 
 /// A parsed IP header and payload
 #[derive(Debug)]
@@ -30,8 +34,7 @@ impl Packet {
         // Parse the Ethernet header
         let eth = self.parse_eth()?;
 
-        // We handle IPv4 only for now
-        const ETH_TYPE_IPV4: u16 =  0x0800;
+        // Handle the ethernet type
         if eth.eth_type != ETH_TYPE_IPV4 {
             return Err(ParseError::UnsupportedVersion);
         }
@@ -71,7 +74,7 @@ impl Packet {
         let dst_ip = Self::parse_u32(Some(&header[16..20]))?.into();
 
         // Validate the total length
-        if total_length < 20 || total_length > eth.payload.len() {
+        if total_length < header.len() || total_length > eth.payload.len() {
             return Err(ParseError::InvalidLength);
         }
 
@@ -90,7 +93,6 @@ impl<'a> eth::Builder<'a> {
     pub fn ipv4(mut self, src: &'a Ipv4Addr, dst: &'a Ipv4Addr)
             -> Option<BuilderV4<'a>> {
         // Write in the type
-        const ETH_TYPE_IPV4: u16 = 0x0800;
         self.cursor.write_u16(ETH_TYPE_IPV4);
 
         // Split the cursor and save the Ethernet header
@@ -99,27 +101,18 @@ impl<'a> eth::Builder<'a> {
     }
 }
 
-/// IP transport protocol
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[repr(u8)]
-pub enum IpProtocol {
-    Icmp = 0x01,
-    Tcp  = 0x06,
-    Udp  = 0x11,
-}
-
 /// Indexes to fields which must be filled in when the packet is finalized
-pub(super) struct ToFill {
-    pub(super) len:  usize,
-    pub(super) prot: usize,
-    pub(super) crc:  usize,
+struct ToFill {
+    len:  usize,
+    prot: usize,
+    crc:  usize,
 }
 
 /// Builder for IPv4 headers
 pub struct BuilderV4<'a> {
-    pub(super) hdr:     &'a mut [u8],
-    pub(super) to_fill: ToFill,
-    pub(super) cursor:  Option<PacketCursor<'a>>,
+    hdr:     &'a mut [u8],
+    to_fill: ToFill,
+    cursor:  Option<PacketCursor<'a>>,
 }
 
 impl<'a> BuilderV4<'a> {
@@ -161,7 +154,7 @@ impl<'a> BuilderV4<'a> {
         let (hdr, cursor) = cursor.split_at_current();
         let cursor = Some(cursor);
 
-        Some(Self { hdr, to_fill, cursor })
+        Some(Self { hdr, to_fill, cursor, })
     }
 
     /// Sets the size of this IP header + `len` as the total packet size
@@ -184,12 +177,19 @@ impl<'a> BuilderV4<'a> {
         let idx = self.to_fill.crc;
         self.hdr[idx..idx + 2].copy_from_slice(&checksum.to_ne_bytes());
     }
+}
 
-    /// Finalize the IP header, writing in the `packet_size` and calculating the
-    /// crc. This `packet_size` does not include the IP header size, only the
-    /// transport layer size
-    pub fn finalize(&mut self, transport_len: u16) {
-        self.write_len(transport_len);
+impl<'a> IpBuilder<'a> for BuilderV4<'a> {
+    fn set_protocol(&mut self, prot: TransportProtocol) {
+        self.hdr[self.to_fill.prot] = prot as u8;
+    }
+
+    fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
+        self.cursor.take()
+    }
+
+    fn finalize(&mut self, payload_len: u16) {
+        self.write_len(payload_len);
         self.write_crc();
     }
 }

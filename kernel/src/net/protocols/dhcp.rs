@@ -5,7 +5,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::net::Ipv4Addr;
+use core::net::{Ipv4Addr, IpAddr};
 
 use crate::net::{NetDevice, Port, NetAddress, Mac};
 use crate::net::protocols::udp;
@@ -379,7 +379,7 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     let mut server_ip:  Option<Ipv4Addr> = None;
     bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
         // Accept packets destined for us
-        let dst_mac = udp.ip.eth.dst_mac;
+        let dst_mac = udp.ip.eth().dst_mac;
         if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
 
         // Attempt to parse the packet as a DHCP reply
@@ -417,7 +417,7 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     let mut subnet_mask:  Option<Ipv4Addr> = None;
     bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
         // Accept packets destined for us
-        let dst_mac = udp.ip.eth.dst_mac;
+        let dst_mac = udp.ip.eth().dst_mac;
         if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
 
         // Attempt to parse the packet as a DHCP reply
@@ -505,8 +505,8 @@ impl Packet {
         let addr = NetAddress {
             src_mac: mac,
             dst_mac: Mac::BROADCAST,
-            src_ip: Ipv4Addr::from_bits(0),
-            dst_ip: Ipv4Addr::from_bits(!0),
+            src_ip: IpAddr::V4(Ipv4Addr::from_bits(0)),
+            dst_ip: IpAddr::V4(Ipv4Addr::from_bits(!0)),
             src_port: DHCP_CLIENT_PORT,
             dst_port: DHCP_SERVER_PORT,
         };

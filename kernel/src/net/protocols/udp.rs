@@ -6,12 +6,13 @@ use alloc::collections::VecDeque;
 use crate::net::packet::{Packet, PacketCursor, PacketLease, ParseError};
 use crate::net::{NetDevice, Port, NetAddress};
 use crate::net::protocols::{ip, eth};
+use crate::net::protocols::ip::IpBuilder;
 
 /// A parsed UDP header and payload
 #[derive(Debug)]
 pub struct Parsed<'a> {
     /// IP header
-    pub ip: ip::ParsedV4<'a>,
+    pub ip: ip::Parsed<'a>,
 
     /// Destination port
     pub dst_port: Port,
@@ -182,29 +183,31 @@ impl Packet {
     /// Parse UDP information from the packet
     pub fn parse_udp(&self) -> Result<Parsed, ParseError> {
         // Parse the IP information header
-        let ip = self.parse_ipv4()?;
+        let ip = self.parse_ipv4().map(ip::Parsed::V4)
+            .or_else(|_| self.parse_ipv6().map(ip::Parsed::V6))?;
 
         /// UDP protocol for the IP header
         const IP_PROT_UDP: u8 = 0x11;
 
         // Check that we're parsing a UDP packet
-        if ip.protocol != IP_PROT_UDP {
+        if ip.protocol() != IP_PROT_UDP {
             return Err(ParseError::InvalidIpProtocol);
         }
 
         // Parse the header
-        let header = ip.payload.get(0..8).ok_or(ParseError::TruncatedPacket)?;
+        let ip_payload = ip.payload();
+        let header = ip_payload.get(0..8).ok_or(ParseError::TruncatedPacket)?;
         let src_port = Port(Packet::parse_u16(header.get(0..2))?);
         let dst_port = Port(Packet::parse_u16(header.get(2..4))?);
         let length   = Packet::parse_u16(header.get(4..6))? as usize;
 
         // Validate the length
-        if length < 8 || length > ip.payload.len() {
+        if length < header.len() || length > ip.payload().len() {
             return Err(ParseError::InvalidLength);
         }
 
         Ok(Parsed {
-            payload: &ip.payload[8..length],
+            payload: &ip.payload()[8..length],
             src_port,
             dst_port,
             ip,
@@ -219,14 +222,14 @@ impl Packet {
     }
 }
 
-impl<'a> ip::BuilderV4<'a> {
+impl<'a> ip::Builder<'a> {
     /// Creates a new UDP builder from this IP builder
     pub fn udp(mut self, src: &'a Port, dst: &'a Port) -> Option<Builder<'a>> {
-        // Fill in the protocol
-        self.hdr[self.to_fill.prot] = ip::IpProtocol::Udp as u8;
+        // Set the protocol
+        self.set_protocol(ip::TransportProtocol::Udp);
 
         // Take out the cursor as we're no longer gonna need it
-        let cursor = self.cursor.take().unwrap();
+        let cursor = self.take_cursor().unwrap();
 
         Builder::new(self, cursor, src, dst)
     }
@@ -236,12 +239,12 @@ impl<'a> ip::BuilderV4<'a> {
 /// finalized
 struct ToFill {
     len: usize,
-    _crc: usize,
+    crc: usize,
 }
 
 /// Builder for UDP headers
 pub struct Builder<'a> {
-    pub(super) ip:      ip::BuilderV4<'a>,
+    pub(super) ip:      ip::Builder<'a>,
     pub(super) hdr:     &'a mut [u8],
     pub(super) payload: PacketCursor<'a>,
     to_fill: ToFill,
@@ -250,24 +253,27 @@ pub struct Builder<'a> {
 impl<'a> Builder<'a> {
     /// Creates a new UDP builder
     pub fn new(
-        ip: ip::BuilderV4<'a>,
+        mut ip: ip::Builder<'a>,
         mut cursor: PacketCursor<'a>,
         src: &'a Port,
         dst: &'a Port,
     ) -> Option<Self> {
+        // Set the protocol
+        ip.set_protocol(ip::TransportProtocol::Udp);
+
         // Write down the ports
         cursor.write(src.0.to_be_bytes().as_ref())?;
         cursor.write(dst.0.to_be_bytes().as_ref())?;
 
         // Zero out the fields which have to be filled in later
         let (len, _) = cursor.write_u16(0)?;
-        let (_crc, _) = cursor.write_u16(0)?;
+        let (crc, _) = cursor.write_u16(0)?;
 
         // Split the header and the payload
         let (hdr, payload) = cursor.split_at_current();
 
         // Write down the fields that will have to be filled in later
-        let to_fill = ToFill { len, _crc };
+        let to_fill = ToFill { len, crc };
 
         Some(Self { ip, hdr, payload, to_fill })
     }
@@ -283,7 +289,7 @@ impl<'a> Builder<'a> {
             -> Option<Self>{
         // Construct the UDP builder
         eth::Builder::new(cursor, &addr.src_mac, &addr.dst_mac)?
-            .ipv4(&addr.src_ip, &addr.dst_ip)?
+            .ip(&addr.src_ip, &addr.dst_ip)?
             .udp(&addr.src_port, &addr.dst_port)
     }
 
@@ -300,15 +306,21 @@ impl<'a> Builder<'a> {
         size
     }
 
+    /// Calculates and writes the CRC
+    fn write_crc(&mut self) {
+        // TODO
+    }
+
     /// Finalizes the UDP packet, writing in all checksums and lengths
     pub fn finalize(&mut self) {
-        // Get the UDP size
+        // Get and write the UDP size
         let udp_len = self.write_len();
 
         // Finalize the IP header
         self.ip.finalize(udp_len);
 
-        // CRC is not required for IPv4
+        // Calculate the CRC
+        self.write_crc();
     }
 }
 
