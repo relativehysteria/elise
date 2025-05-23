@@ -2,7 +2,6 @@
 
 use alloc::sync::Arc;
 use alloc::collections::VecDeque;
-use alloc::vec::Vec;
 
 use crate::net::packet::{Packet, PacketCursor, PacketLease, ParseError};
 use crate::net::{NetDevice, Port, NetAddress};
@@ -316,26 +315,29 @@ impl<'a> Builder<'a> {
             ip::Builder::V6(ipv6) => ipv6,
         };
 
-        // Calculate the UDP length
+        // UDP length (header + payload)
         let udp_len = (self.hdr.len() + self.payload.get().len()) as u32;
 
         // Pseudo-header: source IP, dest IP, length, next header
-        let mut pseudo_header = Vec::with_capacity(40);
-        pseudo_header.extend_from_slice(&ip.src().octets());
-        pseudo_header.extend_from_slice(&ip.dst().octets());
-        pseudo_header.extend_from_slice(&(udp_len.to_be_bytes()));
-        pseudo_header.extend_from_slice(&[0, 0, 0, IP_PROT_UDP]);
+        let mut pseudo_header = [0u8; 40];
+        pseudo_header[00..16].copy_from_slice(&ip.src().octets());
+        pseudo_header[16..32].copy_from_slice(&ip.dst().octets());
+        pseudo_header[32..36].copy_from_slice(&udp_len.to_be_bytes());
+        pseudo_header[39] = IP_PROT_UDP;
 
-        // Now calculate checksum over pseudo-header, UDP header, and payload
-        let mut checksum_data = Vec::new();
-        checksum_data.extend_from_slice(&pseudo_header);
-        checksum_data.extend_from_slice(self.hdr);
-        checksum_data.extend_from_slice(self.payload.get());
+        // Start with an empty checksum accumulator
+        let mut acc: u32 = 0;
+        acc = acc.wrapping_add(Packet::checksum(0, &pseudo_header) as u32);
+        acc = acc.wrapping_add(Packet::checksum(0, self.hdr) as u32);
+        acc = acc.wrapping_add(Packet::checksum(0, self.payload.get()) as u32);
 
-        let checksum = Packet::checksum(0, &checksum_data);
+        // Final fold and complement
+        let mut final_sum = (acc & 0xFFFF) + (acc >> 16);
+        final_sum = (final_sum & 0xFFFF) + (final_sum >> 16);
+        let checksum = !(final_sum as u16);
         let checksum = if checksum == 0 { 0xFFFF } else { checksum };
 
-        // Write checksum into the header
+        // Write the checksum into the header
         let idx = self.to_fill.crc;
         self.hdr[idx..idx + 2].copy_from_slice(&checksum.to_be_bytes());
     }
