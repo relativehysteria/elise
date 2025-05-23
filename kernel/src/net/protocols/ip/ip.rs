@@ -78,7 +78,7 @@ pub trait IpBuilder<'a> {
     fn finalize(&mut self, transport_len: u16);
 }
 
-/// Encapsulation of the IP builders
+/// Unified representation of the IP builders
 pub enum Builder<'a> {
     V4(BuilderV4<'a>),
     V6(BuilderV6<'a>),

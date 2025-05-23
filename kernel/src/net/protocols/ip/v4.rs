@@ -9,7 +9,7 @@ use crate::net::protocols::ip::{TransportProtocol, IpBuilder};
 /// Ethernet type for IPv4
 const ETH_TYPE_IPV4: u16 = 0x0800;
 
-/// A parsed IP header and payload
+/// A parsed IPv4 header and payload
 #[derive(Debug)]
 pub struct ParsedV4<'a> {
     /// Ethernet header
