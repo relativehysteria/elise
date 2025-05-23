@@ -85,6 +85,8 @@ impl<'a> eth::Builder<'a> {
 /// Builder for IPv6 headers
 pub struct BuilderV6<'a> {
     hdr: &'a mut [u8],
+    src: Ipv6Addr,
+    dst: Ipv6Addr,
     to_fill: ToFillV6,
     cursor: Option<PacketCursor<'a>>,
 }
@@ -127,7 +129,17 @@ impl<'a> BuilderV6<'a> {
         let (hdr, cursor) = cursor.split_at_current();
         let cursor = Some(cursor);
 
-        Some(Self { hdr, to_fill, cursor, })
+        Some(Self { hdr, to_fill, cursor, src: *src, dst: *dst })
+    }
+
+    /// Gets the source IP address this builder was called with
+    pub fn src(&self) -> Ipv6Addr {
+        self.src
+    }
+
+    /// Gets the destination IP address this builder was called with
+    pub fn dst(&self) -> Ipv6Addr {
+        self.dst
     }
 
     /// Sets the size of this IP header + `len` as the total packet size

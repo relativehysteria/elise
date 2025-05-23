@@ -2,11 +2,15 @@
 
 use alloc::sync::Arc;
 use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 use crate::net::packet::{Packet, PacketCursor, PacketLease, ParseError};
 use crate::net::{NetDevice, Port, NetAddress};
 use crate::net::protocols::{ip, eth};
 use crate::net::protocols::ip::IpBuilder;
+
+/// UDP protocol for the IP header
+const IP_PROT_UDP: u8 = 0x11;
 
 /// A parsed UDP header and payload
 #[derive(Debug)]
@@ -186,9 +190,6 @@ impl Packet {
         let ip = self.parse_ipv4().map(ip::Parsed::V4)
             .or_else(|_| self.parse_ipv6().map(ip::Parsed::V6))?;
 
-        /// UDP protocol for the IP header
-        const IP_PROT_UDP: u8 = 0x11;
-
         // Check that we're parsing a UDP packet
         if ip.protocol() != IP_PROT_UDP {
             return Err(ParseError::InvalidIpProtocol);
@@ -306,9 +307,37 @@ impl<'a> Builder<'a> {
         size
     }
 
-    /// Calculates and writes the CRC
+    /// Calculates and writes the CRC if the IP layer uses IPv6, otherwise keeps
+    /// the CRC as 0, because IPv4 doesn't require it.
     fn write_crc(&mut self) {
-        // TODO
+        // IPv4 doesn't require a checksum
+        let ip = match &self.ip {
+            ip::Builder::V4(_) => return,
+            ip::Builder::V6(ipv6) => ipv6,
+        };
+
+        // Calculate the UDP length
+        let udp_len = (self.hdr.len() + self.payload.get().len()) as u32;
+
+        // Pseudo-header: source IP, dest IP, length, next header
+        let mut pseudo_header = Vec::with_capacity(40);
+        pseudo_header.extend_from_slice(&ip.src().octets());
+        pseudo_header.extend_from_slice(&ip.dst().octets());
+        pseudo_header.extend_from_slice(&(udp_len.to_be_bytes()));
+        pseudo_header.extend_from_slice(&[0, 0, 0, IP_PROT_UDP]);
+
+        // Now calculate checksum over pseudo-header, UDP header, and payload
+        let mut checksum_data = Vec::new();
+        checksum_data.extend_from_slice(&pseudo_header);
+        checksum_data.extend_from_slice(self.hdr);
+        checksum_data.extend_from_slice(self.payload.get());
+
+        let checksum = Packet::checksum(0, &checksum_data);
+        let checksum = if checksum == 0 { 0xFFFF } else { checksum };
+
+        // Write checksum into the header
+        let idx = self.to_fill.crc;
+        self.hdr[idx..idx + 2].copy_from_slice(&checksum.to_be_bytes());
     }
 
     /// Finalizes the UDP packet, writing in all checksums and lengths
