@@ -6,6 +6,15 @@ use crate::net::protocols::ip::*;
 use crate::net::protocols::eth;
 use crate::net::packet::PacketCursor;
 
+/// IP transport protocol
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[repr(u8)]
+pub enum TransportProtocol {
+    Icmp = 0x01,
+    Tcp  = 0x06,
+    Udp  = 0x11,
+}
+
 /// Unified representation of parsed IP headers
 #[derive(Debug)]
 pub enum Parsed<'a> {
