@@ -152,33 +152,41 @@ impl NetDevice {
         }
     }
 
-    /// Discard a UDP packet which was unhandled by this device and must be
-    /// handled by another device which is expecting it
+    /// Discard a UDP packet and attempt to handle it somewhere else in the
+    /// network stack.
     ///
-    /// Returns whether the `packet` has been handled by this function
-    pub fn discard_udp(&self, packet: PacketLease) -> bool {
+    /// If this function handles the packet, it will be take out of the option
+    pub fn discard_udp(&self, packet: &mut Option<PacketLease>) {
+        let pk = match packet.take() {
+            None => return,
+            Some(pk) => pk,
+        };
+
         // Parse the packet as UDP
-        let udp = match packet.parse_udp() {
+        let udp = match pk.parse_udp() {
             Ok(udp) => udp,
-            _       => return false,
+            _ => {
+                // Couldn't parse it as UDP. Put the packet back and return
+                *packet = Some(pk);
+                return;
+            },
         };
 
         // Check if we are bound on this packet's port
         let mut binds = self.udp_binds.lock();
         let bind = match binds.get_mut(&udp.dst_port) {
             Some(b) => b,
-            None    => return false,
+            None    => return,
         };
 
         // We are bound on the packet's port, put it into queue if there's
         // space, otherwise drop it
         if bind.len() < bind.capacity() {
+            let packet = packet.take().unwrap();
             bind.push_back(PacketLease::take(packet));
         } else {
             // Drop
         }
-
-        return true;
     }
 }
 

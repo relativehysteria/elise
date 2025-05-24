@@ -36,6 +36,8 @@ pub struct Mac(pub [u8; 6]);
 impl Mac {
     /// MAC address used for broadcasts
     pub const BROADCAST: Mac = Mac([0xFF; 6]);
+
+    pub const ZERO: Mac = Mac([0; 6]);
 }
 
 /// A network port
@@ -212,10 +214,12 @@ impl NetDevice {
         NET_DEVICES.set(leased_devs.into_boxed_slice());
     }
 
-    /// Discard a packet which was unhandled and thus may be handled by
-    /// something else that is expecting it
+    /// Discard a packet from somewhere in the network stack and attempt to
+    /// handle it somewhere else in the network stack
     pub fn discard(&self, packet: PacketLease) {
-        self.discard_udp(packet);
+        let mut packet = Some(packet);
+        self.discard_arp(&mut packet);
+        self.discard_udp(&mut packet);
     }
 
     /// Get the device's unique identifier

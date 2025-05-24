@@ -38,7 +38,7 @@ pub enum ParseError {
     /// has disallowed flags set
     FragmentationUnsupported,
 
-    /// The total IP packet length is invalid (too short or longer than
+    /// The total packet length is invalid (too short or longer than
     /// available data)
     InvalidLength,
 }

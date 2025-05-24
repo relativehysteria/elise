@@ -110,7 +110,7 @@ impl<'a> BuilderV6<'a> {
         cursor.write_u16(0)?;
 
         // Payload length
-        let (len, _) = cursor.write_u16(0)?; // payload length
+        let (len, _) = cursor.write_u16(0)?;
 
         // Next header/transport protocol
         let (prot, _) = cursor.write_u8(0)?;

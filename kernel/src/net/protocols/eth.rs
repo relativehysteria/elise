@@ -51,4 +51,9 @@ impl<'a> Builder<'a> {
 
         Some(Self { cursor })
     }
+
+    /// Returns the cursor wrapped by this builder
+    pub fn take_cursor(self) -> PacketCursor<'a> {
+        self.cursor
+    }
 }
