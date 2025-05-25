@@ -144,8 +144,8 @@ impl<'a> BuilderV4<'a> {
         let (crc, _) = cursor.write_u16(0)?;
 
         // Source and destination IPs
-        cursor.write(src.to_bits().to_be_bytes().as_ref())?;
-        cursor.write(dst.to_bits().to_be_bytes().as_ref())?;
+        cursor.write_u32(src.to_bits())?;
+        cursor.write_u32(dst.to_bits())?;
 
         // Save off the indexes of the fields which we'll edit later
         let to_fill = ToFill { len, prot, crc };
