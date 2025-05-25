@@ -92,6 +92,21 @@ pub struct NetAddress {
     pub dst_port: Port,
 }
 
+impl NetAddress {
+    /// Attempt to resolve the provided arguments as a network address
+    pub fn resolve(dev: &NetDevice, src_port: Port, dst_port: Port,
+                   dst_ip: Ipv4Addr) -> Option<Self> {
+        Some(Self {
+            src_mac: dev.mac(),
+            dst_mac: dev.arp(dst_ip)?,
+            src_ip:  IpAddr::V4(dev.dhcp_lease.lock().as_ref()?.client_ip),
+            dst_ip:  IpAddr::V4(dst_ip),
+            src_port,
+            dst_port,
+        })
+    }
+}
+
 impl Default for NetAddress {
     fn default() -> Self {
         Self {
