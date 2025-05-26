@@ -90,10 +90,10 @@ impl<'a> Builder<'a> {
     /// Finalize the IP header, writing in the `payload_len` and calculating the
     /// crc (if applicable). This `payload_len` does not include the IP header
     /// size, only the tranport layer size
-    pub fn finalize(&mut self, transport_len: u16) {
+    pub fn finalize(&mut self, payload_len: u16) {
         match self {
-            Builder::V4(b) => b.finalize(transport_len),
-            Builder::V6(b) => b.finalize(transport_len),
+            Builder::V4(b) => b.finalize(payload_len),
+            Builder::V6(b) => b.finalize(payload_len),
         }
     }
 }
