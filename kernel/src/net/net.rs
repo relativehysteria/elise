@@ -12,7 +12,7 @@ use oncelock::OnceLock;
 use spinlock::SpinLock;
 
 use crate::core_locals::InterruptLock;
-use crate::net::protocols::dhcp;
+use crate::net::protocols::{dhcp, tcp};
 use crate::net::packet::{Packet, PacketLease};
 
 /// All net devices registered during the PCI probing process. When the
@@ -132,14 +132,15 @@ pub struct NetDevice {
     mac: Mac,
 
     /// The DHCP lease for this device
-    pub dhcp_lease: SpinLock<Option<dhcp::Lease>, InterruptLock>,
+    pub(in crate::net) dhcp_lease: SpinLock<Option<dhcp::Lease>, InterruptLock>,
 
     /// Packet queues for bound UDP ports
-    pub udp_binds: SpinLock<BTreeMap<Port, VecDeque<Packet>>, InterruptLock>,
+    pub(in crate::net) udp_binds:
+        SpinLock<BTreeMap<Port, VecDeque<Packet>>, InterruptLock>,
 
-    // TODO:
-    // pub tcp_connections:
-    //    SpinLock<BTreeMap<Port, Arc<SpinLock<TcpConnection, InterruptLock>>>>,
+    /// Active TCP connections
+    pub(in crate::net) tcp_connections:
+        SpinLock<BTreeMap<Port, Arc<tcp::Connection>>, InterruptLock>,
 }
 
 impl NetDevice {
@@ -192,6 +193,7 @@ impl NetDevice {
             dhcp_lease: SpinLock::new(None),
             mac: driver.mac(),
             udp_binds: SpinLock::new(BTreeMap::new()),
+            tcp_connections: SpinLock::new(BTreeMap::new()),
             driver,
             id,
         });

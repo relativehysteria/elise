@@ -64,42 +64,33 @@ impl<'a> Parsed<'a> {
     }
 }
 
-/// The generic builder trait implemented by each IP version builder
-pub trait IpBuilder<'a> {
-    /// Set the transport protocol of the payload
-    fn set_protocol(&mut self, protocol: TransportProtocol);
-
-    /// Take out the cursor out of the builder
-    fn take_cursor(&mut self) -> Option<PacketCursor<'a>>;
-
-    /// Finalize the IP header, writing in the `payload_len` and calculating the
-    /// crc (if applicable). This `payload_len` does not include the IP header
-    /// size, only the tranport layer size
-    fn finalize(&mut self, transport_len: u16);
-}
-
 /// Unified representation of the IP builders
 pub enum Builder<'a> {
     V4(BuilderV4<'a>),
     V6(BuilderV6<'a>),
 }
 
-impl<'a> IpBuilder<'a> for Builder<'a> {
-    fn set_protocol(&mut self, protocol: TransportProtocol) {
+impl<'a> Builder<'a> {
+    /// Set the transport protocol of the payload
+    pub fn set_protocol(&mut self, protocol: TransportProtocol) {
         match self {
             Builder::V4(b) => b.set_protocol(protocol),
             Builder::V6(b) => b.set_protocol(protocol),
         }
     }
 
-    fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
+    /// Take out the cursor out of the builder
+    pub fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
         match self {
             Builder::V4(b) => b.take_cursor(),
             Builder::V6(b) => b.take_cursor(),
         }
     }
 
-    fn finalize(&mut self, transport_len: u16) {
+    /// Finalize the IP header, writing in the `payload_len` and calculating the
+    /// crc (if applicable). This `payload_len` does not include the IP header
+    /// size, only the tranport layer size
+    pub fn finalize(&mut self, transport_len: u16) {
         match self {
             Builder::V4(b) => b.finalize(transport_len),
             Builder::V6(b) => b.finalize(transport_len),

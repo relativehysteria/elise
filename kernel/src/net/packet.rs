@@ -90,16 +90,18 @@ impl Packet {
     }
 
     /// Compute a ones-complement checksum over the provided byte slice.
-    pub fn checksum(mut checksum: u32, bytes: &[u8]) -> u16 {
+    pub fn checksum(bytes: &[u8]) -> u16 {
+        let mut checksum: u32 = 0;
+
         // Process all 2-byte chunks
         for chunk in bytes.chunks_exact(2) {
-            let word = u16::from_ne_bytes([chunk[0], chunk[1]]);
+            let word = u16::from_be_bytes([chunk[0], chunk[1]]);
             checksum = checksum.wrapping_add(word as u32);
         }
 
         // Handle final byte (low byte) if length is odd
         if let Some(&last_byte) = bytes.chunks_exact(2).remainder().first() {
-            checksum = checksum.wrapping_add(last_byte as u32);
+            checksum = checksum.wrapping_add((last_byte as u32) << 8);
         }
 
         // Fold carries

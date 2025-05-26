@@ -11,7 +11,7 @@ use crate::net::packet::{Packet, PacketLease, ParseError};
 /// Number of retries for ARP resolution
 const N_RETRIES: usize = 1_000;
 
-/// Time in microseconds for which we'll wait for the ARP reply
+/// Time in microseconds to wait before timing out on an ARP reply
 const TIMEOUT: u64 = 100_000;
 
 /// Ethernet type for ARP

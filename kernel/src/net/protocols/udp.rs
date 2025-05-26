@@ -6,7 +6,6 @@ use alloc::collections::VecDeque;
 use crate::net::packet::{Packet, PacketCursor, PacketLease, ParseError};
 use crate::net::{NetDevice, Port, NetAddress};
 use crate::net::protocols::{ip, eth};
-use crate::net::protocols::ip::IpBuilder;
 
 /// UDP protocol for the IP header
 const IP_PROT_UDP: u8 = 0x11;
@@ -17,11 +16,11 @@ pub struct Parsed<'a> {
     /// IP header
     pub ip: ip::Parsed<'a>,
 
-    /// Destination port
-    pub dst_port: Port,
-
     /// Source port
     pub src_port: Port,
+
+    /// Destination port
+    pub dst_port: Port,
 
     /// Raw byte payload
     pub payload: &'a [u8],
@@ -203,8 +202,7 @@ impl Packet {
         }
 
         // Parse the header
-        let ip_payload = ip.payload();
-        let header = ip_payload.get(0..8).ok_or(ParseError::TruncatedPacket)?;
+        let header = ip.payload().get(0..8).ok_or(ParseError::TruncatedPacket)?;
         let src_port = Port(Packet::parse_u16(header.get(0..2))?);
         let dst_port = Port(Packet::parse_u16(header.get(2..4))?);
         let length   = Packet::parse_u16(header.get(4..6))? as usize;
@@ -223,6 +221,8 @@ impl Packet {
     }
 
     /// Create a UDP packet builder out of this packet
+    ///
+    /// Panics if the builder can't be created
     pub fn create_udp<'a: 'b, 'b>(&'a mut self, addr: &'b NetAddress)
             -> Builder<'b> {
         Builder::from_packet(self.cursor(), addr)
@@ -231,7 +231,7 @@ impl Packet {
 }
 
 impl<'a> ip::Builder<'a> {
-    /// Creates a new UDP builder from this IP builder
+    /// Creates a new UDP builder out of this IP builder
     pub fn udp(mut self, src: &'a Port, dst: &'a Port) -> Option<Builder<'a>> {
         // Set the protocol
         self.set_protocol(ip::TransportProtocol::Udp);
@@ -250,7 +250,7 @@ struct ToFill {
     crc: usize,
 }
 
-/// Builder for UDP headers
+/// Builder for UDP packets
 pub struct Builder<'a> {
     pub(super) ip:      ip::Builder<'a>,
     pub(super) hdr:     &'a mut [u8],
@@ -270,8 +270,8 @@ impl<'a> Builder<'a> {
         ip.set_protocol(ip::TransportProtocol::Udp);
 
         // Write down the ports
-        cursor.write(src.0.to_be_bytes().as_ref())?;
-        cursor.write(dst.0.to_be_bytes().as_ref())?;
+        cursor.write_u16(src.0)?;
+        cursor.write_u16(dst.0)?;
 
         // Zero out the fields which have to be filled in later
         let (len, _) = cursor.write_u16(0)?;
@@ -286,19 +286,18 @@ impl<'a> Builder<'a> {
         Some(Self { ip, hdr, payload, to_fill })
     }
 
+    /// Creates a new UDP builder from this `cursor`
+    pub fn from_packet(cursor: PacketCursor<'a>, addr: &'a NetAddress)
+            -> Option<Self>{
+        eth::Builder::new(cursor, &addr.src_mac, &addr.dst_mac)?
+            .ip(&addr.src_ip, &addr.dst_ip)?
+            .udp(&addr.src_port, &addr.dst_port)
+    }
+
     /// Writes to the UDP payload if possible, as defined by the
     /// `Cursor::write()` spec
     pub fn write(&mut self, buf: &[u8]) -> Option<(usize, usize)> {
         self.payload.write(buf)
-    }
-
-    /// Creates a new UDP builder from this `cursor`
-    pub fn from_packet(cursor: PacketCursor<'a>, addr: &'a NetAddress)
-            -> Option<Self>{
-        // Construct the UDP builder
-        eth::Builder::new(cursor, &addr.src_mac, &addr.dst_mac)?
-            .ip(&addr.src_ip, &addr.dst_ip)?
-            .udp(&addr.src_port, &addr.dst_port)
     }
 
     /// Writes down the size of the header and the payload into the header, and
@@ -335,9 +334,9 @@ impl<'a> Builder<'a> {
 
         // Start with an empty checksum accumulator
         let mut acc: u32 = 0;
-        acc = acc.wrapping_add(Packet::checksum(0, &pseudo_header) as u32);
-        acc = acc.wrapping_add(Packet::checksum(0, self.hdr) as u32);
-        acc = acc.wrapping_add(Packet::checksum(0, self.payload.get()) as u32);
+        acc = acc.wrapping_add(Packet::checksum(&pseudo_header) as u32);
+        acc = acc.wrapping_add(Packet::checksum(self.hdr) as u32);
+        acc = acc.wrapping_add(Packet::checksum(self.payload.get()) as u32);
 
         // Final fold and complement
         let mut final_sum = (acc & 0xFFFF) + (acc >> 16);

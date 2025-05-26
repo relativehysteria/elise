@@ -13,16 +13,16 @@ use crate::net::packet::Packet;
 
 /// Amount of time in microseconds to wait for a DHCP response.
 /// If a response doesn't come within this timeout, the process will be aborted
-const DHCP_TIMEOUT: u64 = 5_000_000;
+const TIMEOUT: u64 = 5_000_000;
 
 /// DHCP port of the client
-const DHCP_CLIENT_PORT: Port = Port(68);
+const CLIENT_PORT: Port = Port(68);
 
 /// DHCP port of the server
-const DHCP_SERVER_PORT: Port = Port(67);
+const SERVER_PORT: Port = Port(67);
 
 /// The magic DHCP cookie
-const DHCP_COOKIE: u32 = 0x63825363;
+const COOKIE: u32 = 0x63825363;
 
 /// DHCP message header
 #[derive(Debug, Clone, Copy, Default)]
@@ -349,7 +349,7 @@ pub struct Lease {
 pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     let xid = cpu::rdtsc() as u32;
     let mac = dev.mac();
-    let bind = NetDevice::bind_udp_port(dev.clone(), DHCP_CLIENT_PORT)?;
+    let bind = NetDevice::bind_udp_port(dev.clone(), CLIENT_PORT)?;
 
     let send_dhcp_request = |msg_type: MessageType, extra_opts: &[DhcpOption]| {
         let mut opts = DhcpOptionsBuilder::new();
@@ -377,7 +377,7 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     // Attempt to get the offer IP and server IP
     let mut offered_ip: Option<Ipv4Addr> = None;
     let mut server_ip:  Option<Ipv4Addr> = None;
-    bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
+    bind.recv_timeout(TIMEOUT, |_, udp| {
         // Accept packets destined for us
         let dst_mac = udp.ip.eth().dst_mac;
         if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
@@ -415,7 +415,7 @@ pub fn get_lease(dev: Arc<NetDevice>) -> Option<Lease> {
     // Attempt to get the broadcast IP and the subnet mask
     let mut broadcast_ip: Option<Ipv4Addr> = None;
     let mut subnet_mask:  Option<Ipv4Addr> = None;
-    bind.recv_timeout(DHCP_TIMEOUT, |_, udp| {
+    bind.recv_timeout(TIMEOUT, |_, udp| {
         // Accept packets destined for us
         let dst_mac = udp.ip.eth().dst_mac;
         if dst_mac != mac && dst_mac != Mac::BROADCAST { return None; }
@@ -478,7 +478,7 @@ impl<'a> udp::Parsed<'a> {
         if header.op != Opcode::Reply
             || header.htype != HardwareType::Ethernet
             || header.hlen != HardwareType::Ethernet.hlen()
-            || cookie != DHCP_COOKIE
+            || cookie != COOKIE
         {
             return None;
         }
@@ -507,8 +507,8 @@ impl Packet {
             dst_mac: Mac::BROADCAST,
             src_ip: IpAddr::V4(Ipv4Addr::from_bits(0)),
             dst_ip: IpAddr::V4(Ipv4Addr::from_bits(!0)),
-            src_port: DHCP_CLIENT_PORT,
-            dst_port: DHCP_SERVER_PORT,
+            src_port: CLIENT_PORT,
+            dst_port: SERVER_PORT,
         };
 
         // Create a UDP builder
@@ -533,7 +533,7 @@ impl Packet {
             header.chaddr[..6].copy_from_slice(&mac.0);
 
             // Set the DHCP cookie
-            header.cookie = DHCP_COOKIE.to_be();
+            header.cookie = COOKIE.to_be();
         }
 
         // Write in the options

@@ -4,7 +4,7 @@ use core::net::Ipv4Addr;
 
 use crate::net::protocols::eth;
 use crate::net::packet::{Packet, ParseError, PacketCursor};
-use crate::net::protocols::ip::{TransportProtocol, IpBuilder};
+use crate::net::protocols::ip::TransportProtocol;
 
 /// Ethernet type for IPv4
 const ETH_TYPE_IPV4: u16 = 0x0800;
@@ -111,6 +111,8 @@ struct ToFill {
 /// Builder for IPv4 headers
 pub struct BuilderV4<'a> {
     hdr:     &'a mut [u8],
+    src:     &'a Ipv4Addr,
+    dst:     &'a Ipv4Addr,
     to_fill: ToFill,
     cursor:  Option<PacketCursor<'a>>,
 }
@@ -154,8 +156,19 @@ impl<'a> BuilderV4<'a> {
         let (hdr, cursor) = cursor.split_at_current();
         let cursor = Some(cursor);
 
-        Some(Self { hdr, to_fill, cursor, })
+        Some(Self { hdr, to_fill, cursor, src, dst })
     }
+
+    /// Gets the source IP address this builder was called with
+    pub fn src(&self) -> &'a Ipv4Addr {
+        self.src
+    }
+
+    /// Gets the destination IP address this builder was called with
+    pub fn dst(&self) -> &'a Ipv4Addr {
+        self.dst
+    }
+
 
     /// Sets the size of this IP header + `len` as the total packet size
     fn write_len(&mut self, len: u16) {
@@ -171,24 +184,27 @@ impl<'a> BuilderV4<'a> {
     /// Calculates and sets the CRC field of this IP header
     fn write_crc(&mut self) {
         // Calculate the checksum
-        let checksum = !Packet::checksum(0, &self.hdr);
+        let checksum = !Packet::checksum(&self.hdr);
 
         // Write it down
         let idx = self.to_fill.crc;
         self.hdr[idx..idx + 2].copy_from_slice(&checksum.to_ne_bytes());
     }
-}
 
-impl<'a> IpBuilder<'a> for BuilderV4<'a> {
-    fn set_protocol(&mut self, prot: TransportProtocol) {
+    /// Set the transport protocol of the payload
+    pub fn set_protocol(&mut self, prot: TransportProtocol) {
         self.hdr[self.to_fill.prot] = prot as u8;
     }
 
-    fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
+    /// Take out the cursor out of the builder
+    pub fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
         self.cursor.take()
     }
 
-    fn finalize(&mut self, payload_len: u16) {
+    /// Finalize the IP header, writing in the `payload_len` and calculating the
+    /// crc (if applicable). This `payload_len` does not include the IP header
+    /// size, only the tranport layer size
+    pub fn finalize(&mut self, payload_len: u16) {
         self.write_len(payload_len);
         self.write_crc();
     }

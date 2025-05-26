@@ -4,7 +4,7 @@ use core::net::Ipv6Addr;
 
 use crate::net::protocols::eth;
 use crate::net::packet::{Packet, ParseError, PacketCursor};
-use crate::net::protocols::ip::{TransportProtocol, IpBuilder};
+use crate::net::protocols::ip::TransportProtocol;
 
 /// Ethernet type for IPv6
 const ETH_TYPE_IPV6: u16 = 0x86DD;
@@ -85,8 +85,8 @@ impl<'a> eth::Builder<'a> {
 /// Builder for IPv6 headers
 pub struct BuilderV6<'a> {
     hdr: &'a mut [u8],
-    src: Ipv6Addr,
-    dst: Ipv6Addr,
+    src: &'a Ipv6Addr,
+    dst: &'a Ipv6Addr,
     to_fill: ToFillV6,
     cursor: Option<PacketCursor<'a>>,
 }
@@ -129,16 +129,16 @@ impl<'a> BuilderV6<'a> {
         let (hdr, cursor) = cursor.split_at_current();
         let cursor = Some(cursor);
 
-        Some(Self { hdr, to_fill, cursor, src: *src, dst: *dst })
+        Some(Self { hdr, to_fill, cursor, src, dst })
     }
 
     /// Gets the source IP address this builder was called with
-    pub fn src(&self) -> Ipv6Addr {
+    pub fn src(&self) -> &'a Ipv6Addr {
         self.src
     }
 
     /// Gets the destination IP address this builder was called with
-    pub fn dst(&self) -> Ipv6Addr {
+    pub fn dst(&self) -> &'a Ipv6Addr {
         self.dst
     }
 
@@ -147,18 +147,21 @@ impl<'a> BuilderV6<'a> {
         let idx = self.to_fill.len;
         self.hdr[idx..idx + 2].copy_from_slice(&len.to_be_bytes());
     }
-}
 
-impl<'a> IpBuilder<'a> for BuilderV6<'a> {
-    fn set_protocol(&mut self, prot: TransportProtocol) {
+    /// Set the transport protocol of the payload
+    pub fn set_protocol(&mut self, prot: TransportProtocol) {
         self.hdr[self.to_fill.prot] = prot as u8;
     }
 
-    fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
+    /// Take out the cursor out of the builder
+    pub fn take_cursor(&mut self) -> Option<PacketCursor<'a>> {
         self.cursor.take()
     }
 
-    fn finalize(&mut self, payload_len: u16) {
+    /// Finalize the IP header, writing in the `payload_len` and calculating the
+    /// crc (if applicable). This `payload_len` does not include the IP header
+    /// size, only the tranport layer size
+    pub fn finalize(&mut self, payload_len: u16) {
         self.write_len(payload_len);
     }
 }
