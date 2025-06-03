@@ -14,7 +14,7 @@ use crate::core_locals::InterruptLock;
 /// Maximum number of bytes ot use for TCP windows
 const WINDOW_SIZE: usize = u16::MAX as usize;
 
-/// Time in microseconds to wait before timing out on a SYN-ACK response
+/// Time in microseconds to wait before timing out on ACK responses
 const TIMEOUT: u64 = 1_000_000;
 
 /// Number of retries for a TCP connection rebind
@@ -23,10 +23,19 @@ const N_RETRIES: usize = 100_000;
 /// TCP protocol for the IP header
 const IP_PROT_TCP: u8 = 0x6;
 
+/// Maximum MSS the TCP stack will use
+const MAX_MSS: usize = 1420;
+
 // TODO: enum these
 
 /// TCP synchronize flag (indicates a request to sync sequence numbers)
 const TCP_SYN: u8 = 1 << 1;
+
+/// TCP reset flag (resets a TCP connection)
+const TCP_RST: u8 = 1 << 2;
+
+/// TCP acknowledge
+const TCP_ACK: u8 = 1 << 4;
 
 /// A parsed TCP header and payload
 #[derive(Debug)]
@@ -75,6 +84,130 @@ enum TcpState {
 /// A TCP connection
 pub struct Connection(SpinLock<Internal, InterruptLock>);
 
+impl Connection {
+    /// Send a payload over the TCP connection
+    /// Returns `Some(())` if all bytes are sent. This function won't return
+    /// until all bytes are sent (possibly may block forever).
+    pub fn send(&self, buf: &[u8]) -> Option<()> {
+        // ACK receive timeout. This is set to `!0` to avoid hiting it on the
+        // first loop cycle, but will be set to a sane value later
+        let mut timeout = !0;
+
+        // Pointer to the data that we have yet to send
+        let mut to_send = &buf[..];
+
+        // Parse responses until we recieve a packet not destined to us
+        loop {
+            {
+                // Get access to the connection
+                let mut con = self.0.lock();
+                if con.state != TcpState::Established { return None; }
+
+                // If we didn't get an ACK before timing out, we either have no
+                // window left, or we have sent everything and we're waiting for
+                // the final ack
+                //
+                // Calculate how much was sent but unacknowledged
+                if cpu::rdtsc() >= timeout {
+                    // Compute how much we have sent so far
+                    let sent = buf.len() - to_send.len();
+
+                    // Compute the number of unacked bytes
+                    let unacked = con.seq.wrapping_sub(con.remote_ack) as usize;
+
+                    // Rewind the pointer
+                    to_send = &buf[sent - unacked..];
+
+                    // Reset the seq
+                    con.seq = con.remote_ack;
+                }
+
+                // If everything is sent and acked, return
+                if to_send.len == 0 && con.remote_ack = con.seq {
+                    return Some(());
+                }
+
+                // Check if we got an ACK and handle it
+                if let Some(pkt) = dev.as_ref().unwrap().recv() {
+                    if let Some(tcp) = pkt.parse_tcp() {
+                        if tcp.dst_port != con.port {
+                            // Packet not for us
+                            core::mem::drop(con);
+                            dev.as_ref().unwrap().discard(pkt);
+                            continue;
+                        }
+
+                        // Handle the packet that is confirmed destined to us
+                        con.handle_packet(&tcp);
+                    } else {
+                        // Not TCP; discard it
+                        core::mem::drop(con);
+                        dev.as_ref().unwrap().discard(pkt);
+                    }
+                }
+            }
+
+            // Get mut access to the connection
+            let mut con = self.0.lock();
+
+            // Cap the MSS
+            let mss = core:;cmp::min(con.remote_mss as usize, MAX_MSS);
+
+            // Compute the number of unacknowledged bytes
+            let unacked = con.seq.wrapping_sub(con.remote_ack) as usize;
+
+            // Compute the number of bytes the remote server is capable of
+            // accepting
+            let remaining = core::cmp::min(
+                to_send.len(),
+                (con.remote_window as usize).saturating_sub(unacked));
+
+            // Everything sent; wait for the final ack
+            if remain == 0 { continue; }
+
+            // Send the MSS-sized chunks of the buffer
+            let mut iter = to_send[..remaining].chunks(mss);
+            while let Some(chunk) = iter.next() {
+                // Create the packet
+                let mut packet = dev.as_ref().unwrap().allocate_packet();
+                {
+                    let mut cursor = packet.create_tcp(
+                        &con.server,
+                        TCP_ACK | if iter.len() == 0 { TCP_PSH } else { 0 },
+                        con.seq,
+                        con.ack,
+                        (WINDOW_SIZE - con.window.len()) as u16);
+                    cursor.write(chunk);
+                }
+
+                // Update our seq and send the packet
+                con.seq = con.seq.wrapping_add(chunk.len() as u32);
+                dev.as_ref().unwrap().send(packet, iter.len() == 0);
+            }
+
+            // Advance the pointer reflecting what we sent
+            to_send = &to_send[remain..];
+
+            // Set a timeout for a window update
+            timout = crate::time::future(1_000);
+        }
+    }
+
+    /// Receives data from the TCP connection
+    pub fn recv(&self, buf: &mut[u8]) -> Option<usize> {
+        // Get a pointer to the buffer
+        let mut to_recv = &mut buf[..];
+
+        // Get mutable access to the TCP connection
+        let mut con = self.0.lock();
+
+        // If the connection isn't established, nothing to do
+        if con.state != TcpState::Established { return None; }
+
+        // TODO
+    }
+}
+
 /// The actual internal state of a TCP connection
 #[allow(dead_code)]
 pub struct Internal {
@@ -98,13 +231,120 @@ pub struct Internal {
 }
 
 impl Internal {
-    // TODO
-    pub fn handle_packet(&mut self, _tcp: &Parsed) -> Option<usize> {
-        None
+    /// Handle a TCP packet
+    ///
+    /// This could be _any_ TCP packet
+    pub fn handle_packet(&mut self, tcp: &Parsed) -> Option<()> {
+        // Packets not destined to us should be discarded by the caller
+        assert!(self.port == tcp.dst_port,
+            "Packets not destined to `handle_packet()` should be discarded");
+
+        // Don't handle packets if the connection is closed
+        if self.state == TcpState::Closed { return None; }
+
+        // If we got a reset, close the connection
+        // TODO: handle FINs and close the connection gracefully
+        if tcp.flags & TCP_RST != 0 {
+            self.state = TcpState::Closed;
+            return None;
+        }
+
+        // At this point any point we only expect ACKs
+        if tcp.flags & TCP_ACK == 0 { return None; }
+
+        // Get the number of unacknowledged bytes
+        let unacked = self.seq.wrapping_sub(self.remote_ack);
+
+        // Make sure the remote end is not acknowledging bytes we never sent
+        if tcp.ack.wrapping_sub(self.remote_ack) > unacked { return None; }
+
+        // TODO: handle out of order packets
+        // For now, we'll just drop them
+        if self.state == TcpState::Established && tcp.seq != seq.ack {
+            return None;
+        }
+
+        // Track whether we need to send an ACK
+        let mut should_ack = false;
+
+        // Check if the packet contains any data and if it does, copy it to our
+        // window
+        if self.state == TcpState::Established && tcp.payload.len() > 0 {
+            // Drop packets that exceed our window; the remote side should never
+            // send more than that.
+            if tcp.payload.len() > WINDOW_SIZE - self.window.len() {
+                return None;
+            }
+
+            // Save the data into oru window
+            self.window.extend(tcp.payload);
+
+            // Update the ack to indicate we read the bytes
+            self.ack = self.ack.wrapping_add(tcp.payload.len() as u32);
+            should_ack = true;
+        }
+
+        // If we're waiting for a SYN-ACK, check if this is it
+        if (self.state == Tcp::SynSent || self.state == TcpState::Established)
+                && tcp.flags & TCP_SYN != 0 {
+            // If we just acked a SYN, update the state
+            self.state = TcpState::Established;
+            self.ack = tcp.seq.wrapping_add(1);
+            should_ack = true;
+        }
+
+        // Send an ACK if needed
+        if should_ack {
+            let mut packet = self.dev.allocate_packet();
+            {
+                packet.create_tcp(
+                    &self.server, TCP_ACK, self.seq, self.ack,
+                    (WINDOW_SIZE as usize - self.window.len()) as u16);
+            }
+            self.dev.send(packet, true);
+        }
+
+        // Update the server state to the most recent packet information
+        self.remote_ack = tcp.ack;
+        self.remote_window = tcp.window;
+        Some(())
     }
 }
 
 impl NetDevice {
+    /// Discard a TCP packet and attempt to handle it somewhere else in the
+    /// network stac.
+    ///
+    /// If this function handles the packet, it will be taken out of the option
+    pub fn discard_tcp(&self, packet: &mut Option<PacketLease>) {
+        let pk = match packet.take() {
+            None => return,
+            Some(pk) = pk,
+        };
+
+        // Parse the packet as TCP
+        let tcp = match pk.parse_tcp() {
+            Ok(tcp) => tcp,
+            _ => {
+                // Couldn't parse as TCP. put the packet back and return
+                *packet = Some(pkt);
+                return;
+            }
+        };
+
+        // Get access to TCP connections
+        let mut cons = self.tcp_connections.lock();
+
+        // If we have a connection for this port, attempt to handle the packet
+        if let Some(con) = cons.get_mut(&tcp.dst_port) {
+            let con = con.clone();
+            core::mem::drop(cons);
+            con.lock().handle_packet(&tcp);
+            return;
+        }
+    }
+
+    /// Create a connection to the remote server specified by the IP and port
     pub fn tcp_connect(dev: Arc<NetDevice>, dst_ip: Ipv4Addr, dst_port: Port)
             -> Option<Arc<Connection>> {
         // Bind/rebind a TCP connection on the first free port
@@ -138,12 +378,11 @@ impl NetDevice {
 
             // Send a SYN packet
             {
-                // MSS = 0x058C (1420)
-                let opts = [2, 4, 0x5, 0x8C];
+                let opts = [2, 4, (MAX_MSS >> 8) as u8, (MAX_MSS & 0xFF) as u8];
                 let mut con = con.0.lock();
                 let mut packet = dev.allocate_packet();
                 {
-                    packet.create_tcp(
+                    packet.create_tcp_options(
                         &con.server,
                         TCP_SYN,
                         con.seq,
@@ -418,6 +657,20 @@ impl Packet {
     ///
     /// Panics if the builder can't be created
     pub fn create_tcp<'a: 'b, 'b>(
+        &'a mut self,
+        addr: &'b NetAddress,
+        flags: u8,
+        seq: u32,
+        ack: u32,
+        window: u16,
+    ) -> Builder<'b> {
+        self.create_tcp(addr, flags, seq, ack, window, &[])
+    }
+
+    /// Create a TCP builder out of this packet, setting `options` as TCP opts
+    ///
+    /// Panics if the builder can't be created
+    pub fn create_tcp_options<'a: 'b, 'b>(
         &'a mut self,
         addr: &'b NetAddress,
         flags: u8,
